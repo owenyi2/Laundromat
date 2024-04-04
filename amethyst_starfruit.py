@@ -95,8 +95,14 @@ class Trader:
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-        sell_vol, best_sell_pr = abs(sum(osell.values())), list(osell.keys())[-1]
-        buy_vol, best_buy_pr = abs(sum(obuy.values())), list(obuy.keys())[-1]
+        best_sell_pr = list(osell.keys())[0]
+        best_buy_pr = list(obuy.keys())[0]
+
+        undercut_buy = best_buy_pr + 1
+        undercut_sell = best_sell_pr - 1
+
+        bid_pr = min(undercut_buy, fair_value-1) # we will shift this by 1 to beat this price
+        sell_pr = max(undercut_sell, fair_value+1)
 
         cpos = position
 
@@ -104,7 +110,22 @@ class Trader:
             if ((ask < fair_value) or ((position < 0) and (ask == fair_value))) and cpos < POSITION_LIMIT:
                 order_for = min(-vol, POSITION_LIMIT - cpos)
                 cpos += order_for
-                orders.append(Order("AMETHYSTS", ask, order_for))
+                orders.append(Order("AMETHYSTS", ask, order_for))        
+
+        if (cpos < POSITION_LIMIT) and (position < 0):
+            num = min(40, POSITION_LIMIT - cpos)
+            orders.append(Order("AMETHYSTS", min(undercut_buy + 1, fair_value-1), num))
+            cpos += num
+
+        if (cpos < POSITION_LIMIT) and (position > 15):
+            num = min(40, POSITION_LIMIT - cpos)
+            orders.append(Order("AMETHYSTS", min(undercut_buy - 1, fair_value-1), num))
+            cpos += num
+
+        if cpos < POSITION_LIMIT:
+            num = min(40, POSITION_LIMIT - cpos)
+            orders.append(Order("AMETHYSTS", bid_pr, num))
+            cpos += num
         
         cpos = position
 
@@ -113,6 +134,21 @@ class Trader:
                 order_for = max(-vol, -POSITION_LIMIT - cpos)
                 cpos += order_for
                 orders.append(Order("AMETHYSTS", bid, order_for))
+        
+        if (cpos > -POSITION_LIMIT) and (position > 0):
+            num = max(-40, -POSITION_LIMIT-cpos)
+            orders.append(Order("AMETHYSTS", max(undercut_sell-1, fair_value+1), num))
+            cpos += num
+
+        if (cpos > -POSITION_LIMIT) and (position < -15):
+            num = max(-40, -POSITION_LIMIT-cpos)
+            orders.append(Order("AMETHYSTS", max(undercut_sell+1, fair_value+1), num))
+            cpos += num
+
+        if cpos > -POSITION_LIMIT:
+            num = max(-40, -POSITION_LIMIT-cpos)
+            orders.append(Order("AMETHYSTS", sell_pr, num))
+            cpos += num
 
         return orders
     
