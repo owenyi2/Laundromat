@@ -168,12 +168,19 @@ class Trader:
             return (best_ask + best_bid) / 2.0
         else:
             return None 
-    
-    def compute_starfruit_value(self, midprices: list[float]) -> int:
-        coefficients = np.array([0.1, 0.2, 0.3, 0.4])
+
+    def compute_ema(self, midprice, previous_ema, alpha): 
+        if previous_ema is None:
+            ema = midprice
+        else:
+            ema = alpha * midprice + (1 - alpha) * previous_ema
+        return ema
+
+    def compute_starfruit_value(self, midprice, slow_ema, fast_ema) -> int:
         intercept = 0
+        coefficients = np.array([0.25641302, -0.03131198, 0.77487554])
  
-        predicted_midprice = np.dot(coefficients, np.array(midprices)) + intercept
+        predicted_midprice = np.dot(coefficients, [midprice, slow_ema, fast_ema]) + intercept
         predicted_midprice = int(round(predicted_midprice))
 
         return predicted_midprice
@@ -185,11 +192,11 @@ class Trader:
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-        our_bid = fair_value - 1
-        our_ask = fair_value + 1
+        our_bid = fair_value - 2
+        our_ask = fair_value + 2
 
-        best_sell_pr = list(osell.keys())[-1]
-        best_buy_pr = list(obuy.keys())[-1]
+        best_sell_pr = list(osell.keys())[0]
+        best_buy_pr = list(obuy.keys())[0]
         undercut_buy = best_sell_pr + 1
         undercut_sell = best_buy_pr - 1 
         bid_pr = min(undercut_buy, our_bid) # we will shift this by 1 to beat this price
@@ -228,7 +235,7 @@ class Trader:
         conversions = 0
 
         if state.traderData == '':
-            traderData = {"STARFRUIT": {"midprice": []}}
+            traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None}}
         else:
             traderData = json.loads(state.traderData)
 
@@ -241,13 +248,12 @@ class Trader:
         position = state.position.get(product, 0)
         order_depth: OrderDepth = state.order_depths[product]
         midprice = self.compute_midprice(order_depth)
-        historical_midprices = traderData[product]["midprice"]
-        historical_midprices.append(midprice if midprice else historical_midprices[-1])
-        historical_midprices = historical_midprices[-4:]
-        traderData[product]["midprice"] = historical_midprices
-        if len(historical_midprices) >= 4:
-            fair_value = self.compute_starfruit_value(historical_midprices)
-            orders[product] = self.compute_starfruit_order(position, order_depth, fair_value)
+        slow_ema = self.compute_ema(midprice, previous_ema = traderData[product]["slow_ema"], alpha=0.01)
+        traderData[product]["slow_ema"] = slow_ema
+        fast_ema = self.compute_ema(midprice, previous_ema = traderData[product]["fast_ema"], alpha=0.1) 
+        traderData[product]["fast_ema"] = fast_ema
+        fair_value = self.compute_starfruit_value(midprice, slow_ema, fast_ema)
+        orders[product] = self.compute_starfruit_order(position, order_depth, fair_value)
     
         traderData = json.dumps(traderData)
         # logger.flush(state, orders, conversions, traderData)
