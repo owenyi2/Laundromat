@@ -23,7 +23,7 @@ data_df = data_df.dropna()
 X = data_df.iloc[:, :n].to_numpy()
 y = data_df.iloc[:, -1].to_numpy()
 
-TEST_TRAIN_SPLIT = 1000
+TEST_TRAIN_SPLIT = 1500
 
 reg = LinearRegression().fit(X[:-TEST_TRAIN_SPLIT], y[:-TEST_TRAIN_SPLIT])
 
@@ -31,9 +31,12 @@ print(reg.coef_)
 print(reg.intercept_)
 print(reg.score(X[-TEST_TRAIN_SPLIT:], y[-TEST_TRAIN_SPLIT:]))
 
+prediction = reg.predict(X[-TEST_TRAIN_SPLIT:]).astype(int)
+target = y[-TEST_TRAIN_SPLIT:].astype(int)
+print("MSE: ", np.square(prediction- target).mean())
+
 plt.plot(y)
 plt.plot(reg.predict(X)) # multiple regression 
 plt.plot(np.average(X, axis=1, weights = [1/10, 2/10, 3/10, 4/10])) # simple Weighted MovAvg
 plt.show()
-
 

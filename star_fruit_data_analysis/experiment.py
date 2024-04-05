@@ -6,46 +6,40 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 
+df = pd.read_csv("activity.csv", sep=";")
+df = df[df["product"] == "STARFRUIT"]
 
-LOG_FILE = "f65e7e67-4d41-4642-89ac-294c9c27cbd2_1.log"
+mid_price = df["mid_price"]
+best_bid = df["bid_price_1"]
+best_ask = df["ask_price_1"]
 
-regex = re.findall("URMOM(.*?)URDAD", open(LOG_FILE).read())
-regex = [r.replace("\\", "") for r in regex]
+bid_returns = best_bid - best_bid.shift(1)
+ask_returns = best_ask - best_ask.shift(1)
 
-data = [json.loads(r) for r in regex]
+n = 2
 
-ITEM = "STARFRUIT"
+bid_sigma_left = np.mean(bid_returns) - np.std(bid_returns) * n
+bid_sigma_right = np.mean(bid_returns) + np.std(bid_returns) * n
 
-best_bids = []
-best_asks = []
+ask_sigma_left = np.mean(ask_returns) - np.std(ask_returns) * n
+ask_sigma_right = np.mean(ask_returns) + np.std(ask_returns) * n
 
-for d in data:
-    bids = d["order_depths"][ITEM].get("buy_orders", dict())
-    asks = d["order_depths"][ITEM].get("sell_orders", dict())
+fig, ax = plt.subplots(2, 2, figsize=(12, 6))
 
-    best_bids.append(max([int(p) for p in bids.keys()])) 
-    best_asks.append(min([int(p) for p in asks.keys()])) 
+ax[0, 0].set_title("bid")
+ax[0, 0].hist(bid_returns, bins=30)
+ax[0, 0].axvline(bid_sigma_left, color="black")
+ax[0, 0].axvline(bid_sigma_right, color="black")
+ax[1, 0].plot(bid_returns)
+ax[1, 0].axhline(bid_sigma_left, color="black")
+ax[1, 0].axhline(bid_sigma_right, color="black")
 
-best_bids = np.array(best_bids[:2000:2])
-best_asks = np.array(best_asks[:2000:2])
+ax[0, 1].set_title("ask")
+ax[0, 1].hist(ask_returns, bins=30)
+ax[0, 1].axvline(ask_sigma_left, color="black")
+ax[0, 1].axvline(ask_sigma_right, color="black")
+ax[1, 1].plot(ask_returns)
+ax[1, 1].axhline(ask_sigma_left, color="black")
+ax[1, 1].axhline(ask_sigma_right, color="black")
 
-mid_price = pd.Series((best_bids + best_asks) / 2.0)
-
-m = mid_price.rolling(50).apply(lambda x: LinearRegression().fit(np.array(x.index).reshape(-1, 1), x).predict(np.array(x.index[-1]+10).reshape(-1, 1)))
-
-
-fig, ax = plt.subplots(2,2, figsize=(14, 8))
-
-ax[0, 0].plot(pd.Series(best_bids), label="bids")
-ax[1, 0].plot(pd.Series(best_bids) / pd.Series(best_bids).shift(1), label="bids[i] / bids[i-1]")
-ax[0, 1].plot(pd.Series(best_asks), label="asks")
-ax[1, 1].plot(pd.Series(best_asks) / pd.Series(best_asks).shift(1), label="asks[i] / asks[i-1]")
-
-# ax.plot(best_bids)
-# ax.plot(best_asks)
-# ax.plot(mid_price)
-
-# ax.plot(m)
 plt.show()
-plt.savefig("yeet.png")
-
