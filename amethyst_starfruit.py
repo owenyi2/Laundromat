@@ -89,7 +89,11 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def compute_amethysts_order(self, position, order_depth, fair_value): 
+    def compute_amethysts_order(self, state: TradingState):  
+        position = state.position.get("AMETHYSTS", 0)
+        order_depth: OrderDepth = state.order_depths["AMETHYSTS"] 
+        fair_value = 10000
+
         orders: list[Order] = []
         POSITION_LIMIT = 20
 
@@ -185,9 +189,18 @@ class Trader:
 
         return predicted_midprice
 
-    def compute_starfruit_order(self, position, order_depth, fair_value) -> list[Order]:
-        orders: list[Order] = []
+    def compute_starfruit_order(self, state: TradingState) -> list[Order]:
+        position = state.position.get("STARFRUIT", 0)
+        order_depth: OrderDepth = state.order_depths["STARFRUIT"]
+        midprice = self.compute_midprice(order_depth)
+        
+        slow_ema = self.compute_ema(midprice, self.traderData["STARFRUIT"]["slow_ema"], 0.01)
+        self.traderData["STARFRUIT"]["slow_ema"] = slow_ema
+        fast_ema = self.compute_ema(midprice, self.traderData["STARFRUIT"]["fast_ema"], 0.1) 
+        self.traderData["STARFRUIT"]["fast_ema"] = fast_ema 
+        fair_value = self.compute_starfruit_value(midprice, slow_ema, fast_ema)
 
+        orders: list[Order] = []
         POSITION_LIMIT = 20
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
@@ -197,6 +210,12 @@ class Trader:
 
         best_sell_pr = list(osell.keys())[0]
         best_buy_pr = list(obuy.keys())[0]
+
+        previous_best_sell_pr = self.traderData["STARFRUIT"]["previous_best_sell_pr"] 
+        self.traderData["STARFRUIT"]["previous_best_sell_pr"] = best_sell_pr
+        previous_best_buy_pr = self.traderData["STARFRUIT"]["previous_best_buy_pr"] 
+        self.traderData["STARFRUIT"]["previous_best_buy_pr"] = best_buy_pr
+
         undercut_buy = best_sell_pr + 1
         undercut_sell = best_buy_pr - 1 
         bid_pr = min(undercut_buy, our_bid) # we will shift this by 1 to beat this price
@@ -204,7 +223,13 @@ class Trader:
 
         cpos = position
 
-        for ask, vol in osell.items():
+        for idx, (ask, vol) in enumerate(osell.items()):
+            if idx == 0 and ask <= previous_best_sell_pr - 4:
+                order_for = min(-vol, POSITION_LIMIT - cpos)
+                cpos += order_for
+                orders.append(Order("STARFRUIT", ask, order_for))
+                continue
+
             if ((ask <= our_bid) or ((position<0) and (ask == our_bid+1))) and cpos < POSITION_LIMIT:
                 order_for = min(-vol, POSITION_LIMIT - cpos)
                 cpos += order_for
@@ -217,7 +242,13 @@ class Trader:
 
         cpos = position
 
-        for bid, vol in obuy.items():
+        for idx, (bid, vol) in enumerate(obuy.items()):
+            if idx == 0 and bid >= previous_best_buy_pr + 4:
+                order_for = max(-vol, -POSITION_LIMIT-cpos)
+                cpos += order_for
+                orders.append(Order("STARFRUIT", bid, order_for))
+                continue
+
             if ((bid >= our_ask) or ((position>0) and (bid+1 == our_ask))) and cpos > -POSITION_LIMIT:
                 order_for = max(-vol, -POSITION_LIMIT-cpos) # order_for is a negative number denoting how much we will sell
                 cpos += order_for
@@ -230,31 +261,20 @@ class Trader:
 
         return orders
 
+    def parse_trader_data(self, state: TradingState):
+        if state.traderData == '':
+            self.traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None, "previous_best_sell_pr": 1e9, "previous_best_buy_pr": -1e9}}
+        else:
+            self.traderData = json.loads(state.traderData)        
+
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         orders = {}
         conversions = 0
 
-        if state.traderData == '':
-            traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None}}
-        else:
-            traderData = json.loads(state.traderData)
-
-        product = "AMETHYSTS"
-        position = state.position.get(product, 0)
-        order_depth: OrderDepth = state.order_depths[product] 
-        orders[product] = self.compute_amethysts_order(position, order_depth, 10000)
-
-        product = "STARFRUIT"
-        position = state.position.get(product, 0)
-        order_depth: OrderDepth = state.order_depths[product]
-        midprice = self.compute_midprice(order_depth)
-        slow_ema = self.compute_ema(midprice, previous_ema = traderData[product]["slow_ema"], alpha=0.01)
-        traderData[product]["slow_ema"] = slow_ema
-        fast_ema = self.compute_ema(midprice, previous_ema = traderData[product]["fast_ema"], alpha=0.1) 
-        traderData[product]["fast_ema"] = fast_ema
-        fair_value = self.compute_starfruit_value(midprice, slow_ema, fast_ema)
-        orders[product] = self.compute_starfruit_order(position, order_depth, fair_value)
-    
-        traderData = json.dumps(traderData)
+        self.parse_trader_data(state)
+        orders["AMETHYSTS"] = self.compute_amethysts_order(state)
+        orders["STARFRUIT"] = self.compute_starfruit_order(state)
+         
+        traderData = json.dumps(self.traderData)
         logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData

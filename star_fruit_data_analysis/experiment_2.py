@@ -32,7 +32,7 @@ prediction = reg.predict(X[:-TEST_TRAIN_SPLIT]).astype(int)
 target = y[:-TEST_TRAIN_SPLIT].astype(int)
 print("Training MSE: ", np.square(prediction - target).mean())
 
-fig, ax = plt.subplots(2, 1, figsize=(3, 9))
+fig, ax = plt.subplots(1, 2, figsize=(8, 4))
 
 # Performance on Test set
 prediction = reg.predict(X[-TEST_TRAIN_SPLIT:]).astype(int)
@@ -46,4 +46,13 @@ target = y[-TEST_TRAIN_SPLIT:].astype(int)
 ax[1].scatter(prediction, target) # previous value
 print("Baseline predictor MSE: ", np.square(prediction - target).mean())
 
+plt.show()
+
+fig, ax = plt.subplots()
+
+prediction = reg.predict(X).astype(int)
+ax.plot(df["bid_price_1"].shift(-1).values)
+ax.plot(df["ask_price_1"].shift(-1).values)
+ax.plot(prediction + 1)
+ax.plot(prediction - 1)
 plt.show()

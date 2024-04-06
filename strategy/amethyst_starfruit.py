@@ -210,6 +210,12 @@ class Trader:
 
         best_sell_pr = list(osell.keys())[0]
         best_buy_pr = list(obuy.keys())[0]
+
+        previous_best_sell_pr = self.traderData["STARFRUIT"]["previous_best_sell_pr"] 
+        self.traderData["STARFRUIT"]["previous_best_sell_pr"] = best_sell_pr
+        previous_best_buy_pr = self.traderData["STARFRUIT"]["previous_best_buy_pr"] 
+        self.traderData["STARFRUIT"]["previous_best_buy_pr"] = best_buy_pr
+
         undercut_buy = best_sell_pr + 1
         undercut_sell = best_buy_pr - 1 
         bid_pr = min(undercut_buy, our_bid) # we will shift this by 1 to beat this price
@@ -217,7 +223,13 @@ class Trader:
 
         cpos = position
 
-        for ask, vol in osell.items():
+        for idx, (ask, vol) in enumerate(osell.items()):
+            if idx == 0 and ask <= previous_best_sell_pr - 4:
+                order_for = min(-vol, POSITION_LIMIT - cpos)
+                cpos += order_for
+                orders.append(Order("STARFRUIT", ask, order_for))
+                continue
+
             if ((ask <= our_bid) or ((position<0) and (ask == our_bid+1))) and cpos < POSITION_LIMIT:
                 order_for = min(-vol, POSITION_LIMIT - cpos)
                 cpos += order_for
@@ -230,7 +242,13 @@ class Trader:
 
         cpos = position
 
-        for bid, vol in obuy.items():
+        for idx, (bid, vol) in enumerate(obuy.items()):
+            if idx == 0 and bid >= previous_best_buy_pr + 4:
+                order_for = max(-vol, -POSITION_LIMIT-cpos)
+                cpos += order_for
+                orders.append(Order("STARFRUIT", bid, order_for))
+                continue
+
             if ((bid >= our_ask) or ((position>0) and (bid+1 == our_ask))) and cpos > -POSITION_LIMIT:
                 order_for = max(-vol, -POSITION_LIMIT-cpos) # order_for is a negative number denoting how much we will sell
                 cpos += order_for
@@ -245,7 +263,7 @@ class Trader:
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None}}
+            self.traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None, "previous_best_sell_pr": 1e9, "previous_best_buy_pr": -1e9}}
         else:
             self.traderData = json.loads(state.traderData)        
 
@@ -258,5 +276,5 @@ class Trader:
         orders["STARFRUIT"] = self.compute_starfruit_order(state)
          
         traderData = json.dumps(self.traderData)
-        logger.flush(state, orders, conversions, traderData)
+        # logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
