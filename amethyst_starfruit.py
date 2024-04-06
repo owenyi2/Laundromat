@@ -216,8 +216,8 @@ class Trader:
         previous_best_buy_pr = self.traderData["STARFRUIT"]["previous_best_buy_pr"] 
         self.traderData["STARFRUIT"]["previous_best_buy_pr"] = best_buy_pr
 
-        undercut_buy = best_sell_pr + 1
-        undercut_sell = best_buy_pr - 1 
+        undercut_buy = best_buy_pr + 1
+        undercut_sell = best_sell_pr - 1 
         bid_pr = min(undercut_buy, our_bid) # we will shift this by 1 to beat this price
         sell_pr = max(undercut_sell, our_ask)
 
