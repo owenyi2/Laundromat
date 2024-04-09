@@ -123,16 +123,16 @@ class Trader:
         # We buy here
         for ask, vol in sell_orders.items():
             # If the ask price is less than the fair value of AMETHYSTS, or the current position is negative (we have shorted the stock) and the ask price is equal to the fair value, and the current position is less than the limit
-            if ((ask < self.AMETHYSTS_FAIR_VALUE) or ((curr_pos_constant < 0) and (ask == self.AMETHYSTS_FAIR_VALUE))) and curr_pos < self.POSITION_LIMIT['AMETHYSTS']:
-                order_for = min(-vol, self.POSITION_LIMIT['AMETHYSTS'] - curr_pos)
+            if ((ask < self.AMETHYSTS_FAIR_VALUE) or ((curr_pos_constant < 0) and (ask == self.AMETHYSTS_FAIR_VALUE))) and curr_pos < self.POSITION_LIMIT:
+                order_for = min(-vol, self.POSITION_LIMIT - curr_pos)
                 curr_pos += order_for
                 assert(order_for >= 0)
                 amethysts_orders.append(Order("AMETHYSTS", ask, order_for))
 
         # We sell here
         for bid, vol in buy_orders.items():
-            if ((bid > self.AMETHYSTS_FAIR_VALUE) or ((curr_pos_constant > 0) and (bid == self.AMETHYSTS_FAIR_VALUE))) and curr_pos > -self.POSITION_LIMIT['AMETHYSTS']:
-                order_for = max(-vol, -self.POSITION_LIMIT['AMEcTHYSTS'] - curr_pos)
+            if ((bid > self.AMETHYSTS_FAIR_VALUE) or ((curr_pos_constant > 0) and (bid == self.AMETHYSTS_FAIR_VALUE))) and curr_pos > -self.POSITION_LIMIT:
+                order_for = max(-vol, -self.POSITION_LIMIT - curr_pos)
                 # order_for is a negative number denoting how much we will sell
                 curr_pos += order_for
                 assert(order_for <= 0)
@@ -147,6 +147,8 @@ class Trader:
         #     orders.append(Order(product, min(undercut_buy + 1, acc_bid-1), num))
         #     cpos += num
 
+        return amethysts_orders
+
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         result = {}
@@ -154,8 +156,8 @@ class Trader:
         trader_data = ""
 
         # TODO: Add logic
-        result["AMETHYSTS"] = self.handle_amethysts()
+        result["AMETHYSTS"] = self.handle_amethysts(state)
 
-        logger.flush(state, result, conversions, trader_data)
+        # logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
     
