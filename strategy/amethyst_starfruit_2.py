@@ -132,20 +132,20 @@ class Trader:
         # We sell here
         for bid, vol in buy_orders.items():
             if ((bid > self.AMETHYSTS_FAIR_VALUE) or ((curr_pos_constant > 0) and (bid == self.AMETHYSTS_FAIR_VALUE))) and curr_pos > -self.POSITION_LIMIT['AMETHYSTS']:
-                order_for = max(-vol, -self.POSITION_LIMIT['AMETHYSTS'] - curr_pos)
+                order_for = max(-vol, -self.POSITION_LIMIT['AMEcTHYSTS'] - curr_pos)
                 # order_for is a negative number denoting how much we will sell
                 curr_pos += order_for
                 assert(order_for <= 0)
                 amethysts_orders.append(Order("AMETHYSTS", bid, order_for))
         
-        # Market Make
-        best_buy = filter(lambda x: x[0] < self.AMETHYSTS_FAIR_VALUE, buy_orders.items())
-        best_sell = filter(lambda x: x[0] > self.AMETHYSTS_FAIR_VALUE, sell_orders.items())
+        # # Market Make
+        # best_buy = filter(lambda x: x[0] < self.AMETHYSTS_FAIR_VALUE, buy_orders.items())
+        # best_sell = filter(lambda x: x[0] > self.AMETHYSTS_FAIR_VALUE, sell_orders.items())
 
-        if (curr_pos < self.POSITION_LIMIT['AMETHYSTS']) and (self.position[product] < 0):
-            num = min(40, self.POSITION_LIMIT['PEARLS'] - cpos)
-            orders.append(Order(product, min(undercut_buy + 1, acc_bid-1), num))
-            cpos += num
+        # if (curr_pos < self.POSITION_LIMIT['AMETHYSTS']) and (self.position[product] < 0):
+        #     num = min(40, self.POSITION_LIMIT['PEARLS'] - cpos)
+        #     orders.append(Order(product, min(undercut_buy + 1, acc_bid-1), num))
+        #     cpos += num
 
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
