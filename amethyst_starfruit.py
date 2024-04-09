@@ -99,14 +99,12 @@ class Trader:
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-        best_sell_pr = list(osell.keys())[0]
-        best_buy_pr = list(obuy.keys())[0]
+        
+        best_sell_pr = list(filter(lambda x: x > fair_value, osell.keys()))[0]
+        best_buy_pr = list(filter(lambda x: x < fair_value, obuy.keys()))[0]
 
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
-
-        bid_pr = min(undercut_buy, fair_value-1) # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, fair_value+1)
 
         cpos = position
 
@@ -128,7 +126,7 @@ class Trader:
 
         if cpos < POSITION_LIMIT:
             num = min(40, POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", bid_pr, num))
+            orders.append(Order("AMETHYSTS", min(undercut_buy, fair_value-1), num))
             cpos += num
         
         cpos = position
@@ -151,7 +149,7 @@ class Trader:
 
         if cpos > -POSITION_LIMIT:
             num = max(-40, -POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", sell_pr, num))
+            orders.append(Order("AMETHYSTS", max(undercut_sell, fair_value+1), num))
             cpos += num
 
         return orders
@@ -273,7 +271,7 @@ class Trader:
 
         self.parse_trader_data(state)
         orders["AMETHYSTS"] = self.compute_amethysts_order(state)
-        orders["STARFRUIT"] = self.compute_starfruit_order(state)
+        # orders["STARFRUIT"] = self.compute_starfruit_order(state)
          
         traderData = json.dumps(self.traderData)
         logger.flush(state, orders, conversions, traderData)
