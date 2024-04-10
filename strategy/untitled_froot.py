@@ -59,6 +59,11 @@ def KF_update(z, X, P, H, R):
 
     return X, P
 
+# Utility
+
+def avg(values: list) -> int:
+    return round(sum(values) / len(values))
+
 # SMA Implementations
 
 def SMA_standard(self, prices: list, period: int) -> list:
@@ -110,6 +115,43 @@ def EMA_responsive(prices: List, period: int, smoothing: int=2) -> list:
         avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
 
     return avgs
+
+# DMA Implementation
+# thanku dickson...
+
+def _DMA_wma(prices: list, period: int) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return -1
+
+    avgs = []
+    weights = [i + 1 for i in range(period)][::-1]
+    for i in range(len(prices)):
+        if i < window:
+            wma_values.append(sum(prices[:i+1]) / (i+1))
+            continue
+        weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
+        avgs.append(weighted_sum / sum(weights))
+
+    return avgs
+
+def _DMA_hma(prices: list, period: int) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return -1
+    return _DMA_wma(2 * avg(_DMA_wma(prices, int(period / 2))) - avg(_DMA_wma(prices, period)), int(math.sqrt(period)))
+
+def _DMA_ehma(prices: list, period: int) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return -1
+    return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(math.sqrt(period)))
+
+# Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
+def DMA_v3(prices: list, length: int) -> list:
+    hulllength = 7
+    emalength = 20
+    emagainlimit = 50
+    leasterror = 1000000.0
+    return
+
 
 class Logger:
     def __init__(self) -> None:
