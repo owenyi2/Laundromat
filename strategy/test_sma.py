@@ -84,107 +84,6 @@ def SMA_standard(prices: list, period: int) -> list:
 
     return avgs
 
-def SMA_responsive(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-
-    avgs = []
-    for i in range(len(prices)):
-        if i < period:  # fill le first period
-            avgs.append(sum(prices[:i+1]) / (i+1))
-            continue
-
-	delta = (prices[i] - prices[i-period]) / period
-        avgs.append(avgs[i-1] + delta)
-
-    return avgs
-
-# EMA Implementations
-
-def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-
-    avgs = [avg(SMA_standard(prices, period))]
-    for i in range(1, len(prices)):
-        alpha = smoothing / (period + 1)
-        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
-
-    return avgs
-
-# not sure why im making a separate function for this. for readability ig.
-def EMA_responsive(prices: list, period: int, smoothing: int=2) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-
-    avgs = [avg(SMA_responsive(prices, period))]
-    for i in range(1, len(prices)):
-        alpha = smoothing / (period + 1)
-        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
-
-    return avgs
-
-# DMA Implementation
-# thanku dickson...
-
-def _DMA_wma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-
-    avgs = []
-    weights = [i + 1 for i in range(period)][::-1]
-    for i in range(len(prices)):
-        if i < window:
-            wma_values.append(sum(prices[:i+1]) / (i+1))
-            continue
-        weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
-        avgs.append(weighted_sum / sum(weights))
-
-    return avgs
-
-def _DMA_hma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-    return _DMA_wma(2 * avg(_DMA_wma(prices, int(period / 2))) - avg(_DMA_wma(prices, period)), int(math.sqrt(period)))
-
-def _DMA_ehma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
-    return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(math.sqrt(period)))
-
-# Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
-def DMA_v3(prices: list, period: int, wma_mode=True) -> list:
-    # inputs
-    hulllength = 7
-    emalength = 20
-    emagainlimit = 50
-    leasterror = 1000000.0
-
-    #dma
-    alpha = 2 / (emalength + 1)
-    e0 = 0.0
-    e0 = alpha * prices + (1 - alpha) * e0[1] # CHECK
-
-    gain = 0.0
-    bestgain = 0.0
-    error = 0.0
-    ec = 0.0
-
-    avgs = []
-    for i in range(emagainlimit):
-        gain = i / 10
-        ec = alpha * (e0 + gain * (prices - ec)) + (1 - alpha) * ec # CHECK
-        error = abs(prices - ec) # CHECK
-        if error < leasterror:
-            leasterror = error
-            bestgain = gain
-
-    ec = alpha * (e0 + bestgain * (prices - ec)) + (1 - alpha) * ec # CHECK
-
-    if wma_mode:
-        return (ec +_DMA_hma(prices, hulllength)) / 2
-    return (ec +_DMA_ehma(prices, hulllength)) / 2
-
 
 class Logger:
     def __init__(self) -> None:
@@ -271,6 +170,8 @@ class Logger:
 logger = Logger()
 
 class Trader:
+    sf_ma_cache = []
+
     def compute_amethysts_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("AMETHYSTS", 0)
         order_depth: OrderDepth = state.order_depths["AMETHYSTS"]
@@ -363,7 +264,12 @@ class Trader:
             midprice_measurement = midprice
         else:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
-        fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
+        #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
+        ma_period = 5
+        self.sf_ma_cache.append(midprice)
+        if len(self.sf_ma_cache) == ma_period:
+            self.sf_ma_cache.pop(0)
+        fair_value = avg(SMA_standard(self.sf_ma_cache, ma_period))
 
         print(f"fair,{fair_value}")
         print(f"midprice,{midprice}")
@@ -424,6 +330,6 @@ class Trader:
         orders["STARFRUIT"] = self.compute_starfruit_order(state)
 
         traderData = json.dumps(self.traderData)
-        logger.flush(state, orders, conversions, traderData)
+        #logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
 
