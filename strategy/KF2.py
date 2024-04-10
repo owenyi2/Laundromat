@@ -225,8 +225,8 @@ class Trader:
         best_ask_pr = min(osell.keys())
         best_bid_pr = max(obuy.keys())
 
-        best_ask_vol = min(osell.values())
-        best_bid_vol = max(obuy.values())
+        best_ask_vol = list(osell.values())[0]
+        best_bid_vol = list(obuy.values())[0]
 
         previous_ask = self.traderData["STARFRUIT"]["previous_ask"] 
         self.traderData["STARFRUIT"]["previous_ask"] = best_ask_pr 
@@ -237,8 +237,8 @@ class Trader:
         self.traderData["STARFRUIT"]["previous_ask_vol"] = best_ask_pr 
         previous_bid_vol = self.traderData["STARFRUIT"]["previous_bid_vol"] 
         self.traderData["STARFRUIT"]["previous_bid_vol"] = best_bid_pr 
-        midprice = (best_ask_pr*best_bid_vol - best_bid_pr*best_ask_vol) / (best_bid_vol - best_ask_vol) 
-        previous_midprice = (previous_ask*previous_bid_vol - previous_bid*previous_ask_vol) / (previous_bid_vol - previous_ask_vol)
+        midprice = (best_ask_pr*best_bid_vol - best_bid_pr*best_ask_vol) / (float(best_bid_vol) - best_ask_vol) 
+        previous_midprice = (previous_ask*previous_bid_vol - previous_bid*previous_ask_vol) / (float(previous_bid_vol) - previous_ask_vol)
 
         if previous_midprice == 0:
             midprice_measurement = midprice
