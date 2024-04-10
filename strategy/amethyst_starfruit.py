@@ -99,14 +99,12 @@ class Trader:
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-        best_sell_pr = list(osell.keys())[0]
-        best_buy_pr = list(obuy.keys())[0]
+        
+        best_sell_pr = list(filter(lambda x: x > fair_value, osell.keys()))[0]
+        best_buy_pr = list(filter(lambda x: x < fair_value, obuy.keys()))[0]
 
         undercut_buy = best_buy_pr + 1
         undercut_sell = best_sell_pr - 1
-
-        bid_pr = min(undercut_buy, fair_value-1) # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, fair_value+1)
 
         cpos = position
 
@@ -116,19 +114,9 @@ class Trader:
                 cpos += order_for
                 orders.append(Order("AMETHYSTS", ask, order_for))        
 
-        if (cpos < POSITION_LIMIT) and (position < 0):
-            num = min(40, POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", min(undercut_buy + 1, fair_value-1), num))
-            cpos += num
-
-        if (cpos < POSITION_LIMIT) and (position > 15):
-            num = min(40, POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", min(undercut_buy - 1, fair_value-1), num))
-            cpos += num
-
         if cpos < POSITION_LIMIT:
             num = min(40, POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", bid_pr, num))
+            orders.append(Order("AMETHYSTS", min(undercut_buy, fair_value-1), num))
             cpos += num
         
         cpos = position
@@ -139,131 +127,16 @@ class Trader:
                 cpos += order_for
                 orders.append(Order("AMETHYSTS", bid, order_for))
         
-        if (cpos > -POSITION_LIMIT) and (position > 0):
-            num = max(-40, -POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", max(undercut_sell-1, fair_value+1), num))
-            cpos += num
-
-        if (cpos > -POSITION_LIMIT) and (position < -15):
-            num = max(-40, -POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", max(undercut_sell+1, fair_value+1), num))
-            cpos += num
-
         if cpos > -POSITION_LIMIT:
             num = max(-40, -POSITION_LIMIT - cpos)
-            orders.append(Order("AMETHYSTS", sell_pr, num))
+            orders.append(Order("AMETHYSTS", max(undercut_sell, fair_value+1), num))
             cpos += num
 
         return orders
     
-    def compute_midprice(self, order_depth: OrderDepth) -> Optional[float]:
-        if len(order_depth.sell_orders) != 0 or len(order_depth.buy_orders) != 0:
-            # At least one is non-empty
-            try: 
-                best_ask = min(order_depth.sell_orders.keys())
-            except ValueError:
-                best_bid = max(order_depth.buy_orders.keys())
-                return best_bid 
-            try:
-                best_bid = max(order_depth.buy_orders.keys())
-            except ValueError:
-                best_ask = min(order_depth.sell_orders.keys())
-                return best_ask
-            return (best_ask + best_bid) / 2.0
-        else:
-            return None 
-
-    def compute_ema(self, midprice, previous_ema, alpha): 
-        if previous_ema is None:
-            ema = midprice
-        else:
-            ema = alpha * midprice + (1 - alpha) * previous_ema
-        return ema
-
-    def compute_starfruit_value(self, midprice, slow_ema, fast_ema) -> int:
-        intercept = 0
-        coefficients = np.array([0.25641302, -0.03131198, 0.77487554])
- 
-        predicted_midprice = np.dot(coefficients, [midprice, slow_ema, fast_ema]) + intercept
-        predicted_midprice = int(round(predicted_midprice))
-
-        return predicted_midprice
-
-    def compute_starfruit_order(self, state: TradingState) -> list[Order]:
-        position = state.position.get("STARFRUIT", 0)
-        order_depth: OrderDepth = state.order_depths["STARFRUIT"]
-        midprice = self.compute_midprice(order_depth)
-        
-        slow_ema = self.compute_ema(midprice, self.traderData["STARFRUIT"]["slow_ema"], 0.01)
-        self.traderData["STARFRUIT"]["slow_ema"] = slow_ema
-        fast_ema = self.compute_ema(midprice, self.traderData["STARFRUIT"]["fast_ema"], 0.1) 
-        self.traderData["STARFRUIT"]["fast_ema"] = fast_ema 
-        fair_value = self.compute_starfruit_value(midprice, slow_ema, fast_ema)
-
-        orders: list[Order] = []
-        POSITION_LIMIT = 20
-
-        osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
-        obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-        our_bid = fair_value - 2
-        our_ask = fair_value + 2
-
-        best_sell_pr = list(osell.keys())[0]
-        best_buy_pr = list(obuy.keys())[0]
-
-        previous_best_sell_pr = self.traderData["STARFRUIT"]["previous_best_sell_pr"] 
-        self.traderData["STARFRUIT"]["previous_best_sell_pr"] = best_sell_pr
-        previous_best_buy_pr = self.traderData["STARFRUIT"]["previous_best_buy_pr"] 
-        self.traderData["STARFRUIT"]["previous_best_buy_pr"] = best_buy_pr
-
-        undercut_buy = best_buy_pr + 1
-        undercut_sell = best_sell_pr - 1 
-        bid_pr = min(undercut_buy, our_bid) # we will shift this by 1 to beat this price
-        sell_pr = max(undercut_sell, our_ask)
-
-        cpos = position
-
-        for idx, (ask, vol) in enumerate(osell.items()):
-            if idx == 0 and ask <= previous_best_sell_pr - 4:
-                order_for = min(-vol, POSITION_LIMIT - cpos)
-                cpos += order_for
-                orders.append(Order("STARFRUIT", ask, order_for))
-                continue
-
-            if ((ask <= our_bid) or ((position<0) and (ask == our_bid+1))) and cpos < POSITION_LIMIT:
-                order_for = min(-vol, POSITION_LIMIT - cpos)
-                cpos += order_for
-                orders.append(Order("STARFRUIT", ask, order_for))
-
-        if cpos < POSITION_LIMIT:
-            num = POSITION_LIMIT - cpos
-            orders.append(Order("STARFRUIT", bid_pr, num))
-            cpos += num
-
-        cpos = position
-
-        for idx, (bid, vol) in enumerate(obuy.items()):
-            if idx == 0 and bid >= previous_best_buy_pr + 4:
-                order_for = max(-vol, -POSITION_LIMIT-cpos)
-                cpos += order_for
-                orders.append(Order("STARFRUIT", bid, order_for))
-                continue
-
-            if ((bid >= our_ask) or ((position>0) and (bid+1 == our_ask))) and cpos > -POSITION_LIMIT:
-                order_for = max(-vol, -POSITION_LIMIT-cpos) # order_for is a negative number denoting how much we will sell
-                cpos += order_for
-                orders.append(Order("STARFRUIT", bid, order_for))
-
-        if cpos > -POSITION_LIMIT:
-            num = -POSITION_LIMIT-cpos
-            orders.append(Order("STARFRUIT", sell_pr, num))
-            cpos += num
-
-        return orders
-
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"STARFRUIT": {"slow_ema": None, "fast_ema": None, "previous_best_sell_pr": 1e9, "previous_best_buy_pr": -1e9}}
+            self.traderData = {}
         else:
             self.traderData = json.loads(state.traderData)        
 
@@ -273,7 +146,6 @@ class Trader:
 
         self.parse_trader_data(state)
         orders["AMETHYSTS"] = self.compute_amethysts_order(state)
-        orders["STARFRUIT"] = self.compute_starfruit_order(state)
          
         traderData = json.dumps(self.traderData)
         # logger.flush(state, orders, conversions, traderData)

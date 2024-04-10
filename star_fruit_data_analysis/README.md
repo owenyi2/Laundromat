@@ -1,4 +1,0 @@
-- "experiment.py" :: plotting current / previous for bid and ask of starfruit
-- "experiment_1.py" :: multiple regression on previous values
-- "experiment_2.py" :: multiple regression but using a long term moving average as a correlate 
-  - Hypothesis being that the regression should figure out that if current < average, we are down-trending and hence adjust future price down
