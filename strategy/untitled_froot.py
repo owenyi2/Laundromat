@@ -88,8 +88,28 @@ def SMA_responsive(self, prices: list, period: int) -> list:
 
 # EMA Implementations
 
-def EMA_standard(prices: List, period: int) -> list:
-    return []
+def EMA_standard(prices: List, period: int, smoothing: int=2) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return -1
+
+    avgs = [SMA_standard(prices, period)]
+    for i in range(1, len(prices)):
+        alpha = smoothing / (period + 1)
+        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
+
+    return avgs
+
+# not sure why im making a separate function for this. for readability ig.
+def EMA_responsive(prices: List, period: int, smoothing: int=2) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return -1
+
+    avgs = [SMA_responsive(prices, period)]
+    for i in range(1, len(prices)):
+        alpha = smoothing / (period + 1)
+        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
+
+    return avgs
 
 class Logger:
     def __init__(self) -> None:
