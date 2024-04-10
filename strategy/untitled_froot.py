@@ -145,12 +145,37 @@ def _DMA_ehma(prices: list, period: int) -> list:
     return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(math.sqrt(period)))
 
 # Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
-def DMA_v3(prices: list, length: int) -> list:
+def DMA_v3(prices: list, period: int, wma_mode=True) -> list:
+    # inputs
     hulllength = 7
     emalength = 20
     emagainlimit = 50
     leasterror = 1000000.0
-    return
+
+    #dma
+    alpha = 2 / (emalength + 1)
+    e0 = 0.0
+    e0 = alpha * prices + (1 - alpha) * e0[1] # CHECK
+
+    gain = 0.0
+    bestgain = 0.0
+    error = 0.0
+    ec = 0.0
+
+    avgs = []
+    for i in range(emagainlimit):
+        gain = i / 10
+        ec = alpha * (e0 + gain * (prices - ec)) + (1 - alpha) * ec # CHECK
+        error = abs(prices - ec) # CHECK
+        if error < leasterror:
+            leasterror = error
+            bestgain = gain
+
+    ec = alpha * (e0 + bestgain * (prices - ec)) + (1 - alpha) * ec # CHECK
+
+    if wma_mode:
+        return (ec +_DMA_hma(prices, hulllength)) / 2
+    return (ec +_DMA_ehma(prices, hulllength)) / 2
 
 
 class Logger:
