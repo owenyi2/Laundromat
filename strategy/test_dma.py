@@ -352,6 +352,9 @@ class Trader:
         #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
         self.traderData["STARFRUIT"]["MA_cache"].append(midprice)
         fair_value = int(DMA_v3(self.traderData["STARFRUIT"]["MA_cache"]))
+        if self.traderData["STARFRUIT"]["MA_delta"] < 0:
+            self.traderData["STARFRUIT"]["MA_delta"] = midprice - fair_value
+        fair_value += self.traderData["STARFRUIT"]["MA_delta"]
 
         print(f"{fair_value},{midprice}")
         #print(f"fair,{fair_value}")
@@ -401,7 +404,7 @@ class Trader:
             P = np.eye(3) * 0.01 # State Uncertainty (diag)
             x = np.array([[mid_price],[0], [0]]) # Initial state
             #self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P))}}
-            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "MA_cache": []}}
+            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "MA_cache": [], "MA_delta": -1}}
         else:
             self.traderData = json.loads(state.traderData)
 
