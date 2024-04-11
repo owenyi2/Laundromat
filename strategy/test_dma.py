@@ -352,7 +352,7 @@ class Trader:
         if len(self.traderData["STARFRUIT"]["MA_cache"]) == cache_max:
             self.traderData["STARFRUIT"]["MA_cache"].pop(0)
         self.traderData["STARFRUIT"]["MA_cache"].append(midprice)
-        fair_value = int(DMA_v3(self.traderData["STARFRUIT"]["MA_cache"], False))
+        fair_value = int(DMA_v3(self.traderData["STARFRUIT"]["MA_cache"]))
 
         print(f"{fair_value},{midprice}")
         #print(f"fair,{fair_value}")

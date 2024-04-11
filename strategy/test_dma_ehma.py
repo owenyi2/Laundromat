@@ -146,8 +146,7 @@ def DMA_v3(prices: list, wma_mode=True) -> list:
 
     #dma
     alpha = 2 / (emalength + 1)
-    e0 = 0.0
-    e0 = alpha * src + (1 - alpha) * e0 # CHECK
+    e0 = EMA_standard(prices, emalength)[-1]
 
     gain = 0.0
     bestgain = 0.0
@@ -255,8 +254,6 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    sf_ma_cache = []
-
     def compute_amethysts_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("AMETHYSTS", 0)
         order_depth: OrderDepth = state.order_depths["AMETHYSTS"]
@@ -350,11 +347,16 @@ class Trader:
         else:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
         #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
-        self.sf_ma_cache.append(midprice)
-        fair_value = DMA_v3(self.sf_ma_cache, False)
+        print(len(self.traderData["STARFRUIT"]["MA_cache"]))
+        cache_max = 30
+        if len(self.traderData["STARFRUIT"]["MA_cache"]) == cache_max:
+            self.traderData["STARFRUIT"]["MA_cache"].pop(0)
+        self.traderData["STARFRUIT"]["MA_cache"].append(midprice)
+        fair_value = int(DMA_v3(self.traderData["STARFRUIT"]["MA_cache"], False))
 
-        print(f"fair,{fair_value}")
-        print(f"midprice,{midprice}")
+        print(f"{fair_value},{midprice}")
+        #print(f"fair,{fair_value}")
+        #print(f"midprice,{midprice}")
 
         our_bid = fair_value - 2
         our_ask = fair_value + 2
@@ -399,7 +401,8 @@ class Trader:
             mid_price = (min(order_depth.sell_orders.keys()) + max(order_depth.buy_orders.keys())) / 2.0
             P = np.eye(3) * 0.01 # State Uncertainty (diag)
             x = np.array([[mid_price],[0], [0]]) # Initial state
-            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P))}}
+            #self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P))}}
+            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "MA_cache": []}}
         else:
             self.traderData = json.loads(state.traderData)
 
@@ -412,6 +415,6 @@ class Trader:
         orders["STARFRUIT"] = self.compute_starfruit_order(state)
 
         traderData = json.dumps(self.traderData)
-        #logger.flush(state, orders, conversions, traderData)
+        logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
 
