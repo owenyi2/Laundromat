@@ -101,14 +101,14 @@ def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
 # thanku dickson...
 
 def _DMA_wma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
+    if not prices or period <= 0 or (isinstance(prices, list) and period > len(prices)):
         return -1
 
     avgs = []
     weights = [i + 1 for i in range(period)][::-1]
     for i in range(len(prices)):
-        if i < window:
-            wma_values.append(sum(prices[:i+1]) / (i+1))
+        if i < period:
+            avgs.append(sum(prices[:i+1]) / (i+1))
             continue
         weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
         avgs.append(weighted_sum / sum(weights))
@@ -118,12 +118,12 @@ def _DMA_wma(prices: list, period: int) -> list:
 def _DMA_hma(prices: list, period: int) -> list:
     if not prices or period <= 0 or period > len(prices):
         return -1
-    return _DMA_wma(2 * avg(_DMA_wma(prices, int(period / 2))) - avg(_DMA_wma(prices, period)), int(math.sqrt(period)))
+    return _DMA_wma(2 * avg(_DMA_wma(prices, int(period / 2))) - avg(_DMA_wma(prices, period)), int(np.sqrt(period)))
 
 def _DMA_ehma(prices: list, period: int) -> list:
     if not prices or period <= 0 or period > len(prices):
         return -1
-    return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(math.sqrt(period)))
+    return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(np.sqrt(period)))
 
 # Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
 def DMA_v3(prices: list, wma_mode=True) -> list:
@@ -138,7 +138,7 @@ def DMA_v3(prices: list, wma_mode=True) -> list:
     #dma
     alpha = 2 / (emalength + 1)
     e0 = 0.0
-    e0 = alpha * src + (1 - alpha) * e0[1] # CHECK
+    e0 = alpha * src + (1 - alpha) * e0 # CHECK
 
     gain = 0.0
     bestgain = 0.0
