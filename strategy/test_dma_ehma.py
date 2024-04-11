@@ -412,6 +412,6 @@ class Trader:
         orders["STARFRUIT"] = self.compute_starfruit_order(state)
 
         traderData = json.dumps(self.traderData)
-        logger.flush(state, orders, conversions, traderData)
+        #logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
 
