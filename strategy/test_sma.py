@@ -269,7 +269,7 @@ class Trader:
         if len(self.sf_ma_cache) == ma_period:
             self.sf_ma_cache.pop(0)
         self.sf_ma_cache.append(midprice)
-        fair_value = avg(SMA_standard(self.sf_ma_cache, ma_period))
+        fair_value = SMA_standard(self.sf_ma_cache, ma_period)[-1]
 
         print(f"fair,{fair_value}")
         print(f"midprice,{midprice}")

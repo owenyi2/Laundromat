@@ -74,19 +74,100 @@ def avg(values: list) -> int:
 
 # SMA Implementations
 
-def SMA_responsive(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
+def SMA_standard(prices: list, period: int) -> list:
+    if not prices or period <= 0:
         return prices
 
     avgs = []
     for i in range(len(prices)):
-        if i < period:  # fill le first period
-            avgs.append(sum(prices[:i+1]) / (i+1))
-            continue
-        delta = (prices[i] - prices[i-period]) / period
-        avgs.append(avgs[i-1] + delta)
+        avgs.append(sum(prices[max(0, i-period):i+1]) / min(i+1, period))
 
     return avgs
+
+# EMA Implementations
+
+def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
+    if not prices or period <= 0:
+        return prices
+    if not isinstance(prices, list):
+        alpha = smoothing / (period + 1)
+        return [(prices * alpha) + ((prices * (1 - alpha)))]
+    if period > len(prices):
+        return prices
+
+    avgs = [SMA_standard(prices, period)[-1]]
+    for i in range(1, len(prices)):
+        alpha = smoothing / (period + 1)
+        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
+
+    return avgs
+
+# DMA Implementation
+# thanku dickson...
+
+def _DMA_wma(prices: list, period: int) -> list:
+    if not prices or period <= 0:
+        return prices
+    if not isinstance(prices, list):
+        return [prices]
+    if period > len(prices):
+        return prices
+
+    avgs = []
+    weights = [i + 1 for i in range(period)][::-1]
+    for i in range(len(prices)):
+        if i < period:
+            avgs.append(sum(prices[:i+1]) / (i+1))
+            continue
+        weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
+        avgs.append(weighted_sum / sum(weights))
+
+    return avgs
+
+def _DMA_hma(prices: list, period: int) -> int:
+    if not prices or period <= 0 or period > len(prices):
+        return prices
+    return _DMA_wma(2 * _DMA_wma(prices, int(period / 2))[-1] - _DMA_wma(prices, period)[-1], int(np.sqrt(period)))
+
+def _DMA_ehma(prices: list, period: int) -> list:
+    if not prices or period <= 0 or period > len(prices):
+        return prices
+    return EMA_standard(2 * EMA_standard(prices, int(period / 2))[-1] - EMA_standard(prices, period)[-1], int(np.sqrt(period)))
+
+# Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
+def DMA_v3(prices: list, wma_mode=True) -> list:
+    # inputs
+    hulllength = 7
+    emalength = 20
+    emagainlimit = 50
+    leasterror = 1000000.0
+
+    src = prices[-1]
+
+    #dma
+    alpha = 2 / (emalength + 1)
+    e0 = 0.0
+    e0 = alpha * src + (1 - alpha) * e0 # CHECK
+
+    gain = 0.0
+    bestgain = 0.0
+    error = 0.0
+    ec = 0.0
+
+    avgs = []
+    for i in range(emagainlimit):
+        gain = i / 10
+        ec = alpha * (e0 + gain * (src - ec)) + (1 - alpha) * ec # CHECK
+        error = abs(src - ec) # CHECK
+        if error < leasterror:
+            leasterror = error
+            bestgain = gain
+
+    ec = alpha * (e0 + bestgain * (src - ec)) + (1 - alpha) * ec # CHECK
+
+    if wma_mode:
+        return (ec + _DMA_hma(prices, hulllength)[-1]) / 2
+    return (ec + _DMA_ehma(prices, hulllength)[-1]) / 2
 
 
 class Logger:
@@ -269,11 +350,8 @@ class Trader:
         else:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
         #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
-        ma_period = 5
-        if len(self.sf_ma_cache) == ma_period:
-            self.sf_ma_cache.pop(0)
         self.sf_ma_cache.append(midprice)
-        fair_value = SMA_responsive(self.sf_ma_cache, ma_period)[-1]
+        fair_value = DMA_v3(self.sf_ma_cache, False)
 
         print(f"fair,{fair_value}")
         print(f"midprice,{midprice}")
@@ -334,6 +412,6 @@ class Trader:
         orders["STARFRUIT"] = self.compute_starfruit_order(state)
 
         traderData = json.dumps(self.traderData)
-        #logger.flush(state, orders, conversions, traderData)
+        logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
 

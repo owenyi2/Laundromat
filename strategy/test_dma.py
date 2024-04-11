@@ -76,7 +76,7 @@ def avg(values: list) -> int:
 
 def SMA_standard(prices: list, period: int) -> list:
     if not prices or period <= 0:
-        return -1
+        return prices
 
     avgs = []
     for i in range(len(prices)):
@@ -87,10 +87,15 @@ def SMA_standard(prices: list, period: int) -> list:
 # EMA Implementations
 
 def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return -1
+    if not prices or period <= 0:
+        return prices
+    if not isinstance(prices, list):
+        alpha = smoothing / (period + 1)
+        return [(prices * alpha) + ((prices * (1 - alpha)))]
+    if period > len(prices):
+        return prices
 
-    avgs = [avg(SMA_standard(prices, period))]
+    avgs = [SMA_standard(prices, period)[-1]]
     for i in range(1, len(prices)):
         alpha = smoothing / (period + 1)
         avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
@@ -101,8 +106,12 @@ def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
 # thanku dickson...
 
 def _DMA_wma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or (isinstance(prices, list) and period > len(prices)):
-        return -1
+    if not prices or period <= 0:
+        return prices
+    if not isinstance(prices, list):
+        return [prices]
+    if period > len(prices):
+        return prices
 
     avgs = []
     weights = [i + 1 for i in range(period)][::-1]
@@ -115,15 +124,15 @@ def _DMA_wma(prices: list, period: int) -> list:
 
     return avgs
 
-def _DMA_hma(prices: list, period: int) -> list:
+def _DMA_hma(prices: list, period: int) -> int:
     if not prices or period <= 0 or period > len(prices):
-        return -1
-    return _DMA_wma(2 * avg(_DMA_wma(prices, int(period / 2))) - avg(_DMA_wma(prices, period)), int(np.sqrt(period)))
+        return prices
+    return _DMA_wma(2 * _DMA_wma(prices, int(period / 2))[-1] - _DMA_wma(prices, period)[-1], int(np.sqrt(period)))
 
 def _DMA_ehma(prices: list, period: int) -> list:
     if not prices or period <= 0 or period > len(prices):
-        return -1
-    return EMA_standard(2 * avg(EMA_standard(prices, int(period / 2))) - avg(EMA_standard(prices, period)), int(np.sqrt(period)))
+        return prices
+    return EMA_standard(2 * EMA_standard(prices, int(period / 2))[-1] - EMA_standard(prices, period)[-1], int(np.sqrt(period)))
 
 # Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
 def DMA_v3(prices: list, wma_mode=True) -> list:
@@ -157,8 +166,8 @@ def DMA_v3(prices: list, wma_mode=True) -> list:
     ec = alpha * (e0 + bestgain * (src - ec)) + (1 - alpha) * ec # CHECK
 
     if wma_mode:
-        return (ec + avg(_DMA_hma(prices, hulllength))) / 2
-    return (ec + avg(_DMA_ehma(prices, hulllength))) / 2
+        return (ec + _DMA_hma(prices, hulllength)[-1]) / 2
+    return (ec + _DMA_ehma(prices, hulllength)[-1]) / 2
 
 
 class Logger:

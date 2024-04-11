@@ -88,9 +88,9 @@ def SMA_standard(prices: list, period: int) -> list:
 
 def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
     if not prices or period <= 0 or period > len(prices):
-        return -1
+        return prices
 
-    avgs = [avg(SMA_standard(prices, period))]
+    avgs = [SMA_standard(prices, period)[-1]]
     for i in range(1, len(prices)):
         alpha = smoothing / (period + 1)
         avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
@@ -282,7 +282,7 @@ class Trader:
         if len(self.sf_ma_cache) == ma_period:
             self.sf_ma_cache.pop(0)
         self.sf_ma_cache.append(midprice)
-        fair_value = avg(EMA_standard(self.sf_ma_cache, ma_period))
+        fair_value = EMA_standard(self.sf_ma_cache, ma_period)[-1]
 
         print(f"fair,{fair_value}")
         print(f"midprice,{midprice}")
