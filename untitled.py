@@ -212,6 +212,29 @@ class Trader:
 
         return int(round(x[0, 0]))
 
+    def compute_starfruit_ema(self, price):
+        for i, span in enumerate([8., 16., 32., 64., 128., 256., 512.]):
+            if self.traderData["STARFRUIT"]["EMA"][i] is None:
+                self.traderData["STARFRUIT"]["EMA"][i] = price
+                continue
+
+            alpha = 2.0 / (span + 1)
+            past_ema = self.traderData["STARFRUIT"]["EMA"][i]
+            self.traderData["STARFRUIT"]["EMA"][i] = past_ema * (1 - alpha) + price * alpha
+    
+    def compute_trend_adjustment(self):
+        ewmac_0 = self.traderData["STARFRUIT"]["EMA"][0] - self.traderData["STARFRUIT"]["EMA"][2]
+        ewmac_1 = self.traderData["STARFRUIT"]["EMA"][1] - self.traderData["STARFRUIT"]["EMA"][3]
+        ewmac_2 = self.traderData["STARFRUIT"]["EMA"][2] - self.traderData["STARFRUIT"]["EMA"][4]
+        ewmac_3 = self.traderData["STARFRUIT"]["EMA"][3] - self.traderData["STARFRUIT"]["EMA"][5]
+        ewmac_4 = self.traderData["STARFRUIT"]["EMA"][4] - self.traderData["STARFRUIT"]["EMA"][6]
+
+        return (int(ewmac_0 > 0) 
+        + int(ewmac_1 > 0) 
+        + int(ewmac_2 > 0) 
+        + int(ewmac_3 > 0) 
+        + int(ewmac_4 > 0)) / 5 
+
     def compute_starfruit_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("STARFRUIT", 0)
         order_depth: OrderDepth = state.order_depths["STARFRUIT"] 
@@ -238,11 +261,33 @@ class Trader:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
         fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
 
-        print(f"fair,{fair_value}")
-        print(f"midprice,{midprice}")
+        self.compute_starfruit_ema(fair_value)
+        # trend_adjust = int(round(self.compute_trend_adjustment() * 1))
 
-        our_bid = fair_value - 2
-        our_ask = fair_value + 2
+        # print(f"fair,{fair_value}")
+        # print(f"midprice,{midprice}")
+        
+        # our_bid = fair_value - 2
+        # our_ask = fair_value + 2
+
+        if position > 10: # 10 < position <= 20
+            bid_adjust = -3
+            ask_adjust = +1
+        elif position >= 5: # 5 <= position <= 10
+            bid_adjust = -3
+            ask_adjust = +2
+        elif position > -5: # -5 < position < 5
+            bid_adjust = -2
+            ask_adjust = +2
+        elif position >= -10: # -10 <= position <= 5
+            bid_adjust = -2
+            ask_adjust = +3
+        else: # -20 <= position < -10
+            bid_adjust = -1
+            ask_adjust = +3
+
+        our_bid = fair_value + bid_adjust
+        our_ask = fair_value + ask_adjust
 
         bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
         sell_pr = max(best_ask_pr - 1, our_ask)
@@ -284,7 +329,7 @@ class Trader:
             mid_price = (min(order_depth.sell_orders.keys()) + max(order_depth.buy_orders.keys())) / 2.0
             P = np.eye(3) * 0.01 # State Uncertainty (diag) 
             x = np.array([[mid_price],[0], [0]]) # Initial state
-            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P))}}
+            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P)), "EMA": [None, None, None, None, None, None, None]}}
         else:
             self.traderData = json.loads(state.traderData) 
 
