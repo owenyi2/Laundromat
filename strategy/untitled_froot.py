@@ -160,10 +160,12 @@ def DMA_v3(prices: list, period: int, wma_mode=True) -> list:
     emagainlimit = 50
     leasterror = 1000000.0
 
+    src = prices[-1]
+
     #dma
     alpha = 2 / (emalength + 1)
     e0 = 0.0
-    e0 = alpha * prices + (1 - alpha) * e0[1] # CHECK
+    e0 = alpha * src + (1 - alpha) * e0[1] # CHECK
 
     gain = 0.0
     bestgain = 0.0
@@ -173,17 +175,17 @@ def DMA_v3(prices: list, period: int, wma_mode=True) -> list:
     avgs = []
     for i in range(emagainlimit):
         gain = i / 10
-        ec = alpha * (e0 + gain * (prices - ec)) + (1 - alpha) * ec # CHECK
-        error = abs(prices - ec) # CHECK
+        ec = alpha * (e0 + gain * (src - ec)) + (1 - alpha) * ec # CHECK
+        error = abs(src - ec) # CHECK
         if error < leasterror:
             leasterror = error
             bestgain = gain
 
-    ec = alpha * (e0 + bestgain * (prices - ec)) + (1 - alpha) * ec # CHECK
+    ec = alpha * (e0 + bestgain * (src - ec)) + (1 - alpha) * ec # CHECK
 
     if wma_mode:
-        return (ec +_DMA_hma(prices, hulllength)) / 2
-    return (ec +_DMA_ehma(prices, hulllength)) / 2
+        return (ec + avg(_DMA_hma(prices, hulllength))) / 2
+    return (ec + avg(_DMA_ehma(prices, hulllength))) / 2
 
 
 class Logger:

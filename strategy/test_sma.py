@@ -266,9 +266,9 @@ class Trader:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
         #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
         ma_period = 5
-        self.sf_ma_cache.append(midprice)
         if len(self.sf_ma_cache) == ma_period:
             self.sf_ma_cache.pop(0)
+        self.sf_ma_cache.append(midprice)
         fair_value = avg(SMA_standard(self.sf_ma_cache, ma_period))
 
         print(f"fair,{fair_value}")
