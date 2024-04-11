@@ -286,8 +286,8 @@ class Trader:
             bid_adjust = -1
             ask_adjust = +3
 
-        our_bid = fair_value + trend_adjust + bid_adjust
-        our_ask = fair_value + trend_adjust + ask_adjust
+        our_bid = fair_value + bid_adjust
+        our_ask = fair_value + ask_adjust
 
         bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
         sell_pr = max(best_ask_pr - 1, our_ask)
