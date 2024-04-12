@@ -6,59 +6,6 @@ import jsonpickle
 from copy import deepcopy
 import numpy as np
 
-def reshape_z(z, dim_z, ndim):
-    """ensure z is a (dim_z, 1) shaped vector"""
-
-    z = np.atleast_2d(z)
-    if z.shape[1] == dim_z:
-        z = z.T
-
-    if z.shape != (dim_z, 1):
-        raise ValueError(
-            "z (shape {}) must be convertible to shape ({}, 1)".format(z.shape, dim_z)
-        )
-
-    if ndim == 1:
-        z = z[:, 0]
-
-    if ndim == 0:
-        z = z[0, 0]
-
-    return z
-
-# X :: State Matrix
-# P :: State Uncertainty
-# Q :: Process Uncertainty
-# R :: Measurement Uncertainty
-# F :: State Transition
-# H :: Observation Matrix
-
-# code sourced from <https://github.com/rlabbe/filterpy/blob/master/filterpy/kalman/kalman_filter.py#L133C7-L133C19> and <https://arxiv.org/ftp/arxiv/papers/1204/1204.0375.pdf> with modifications
-
-def KF_predict(X, P, F, Q):
-    X = np.dot(F, X)
-    P = np.dot(F, np.dot(P, F.T)) + Q
-
-    return X, P
-
-def KF_update(z, X, P, H, R):
-    Z = reshape_z(z, 1, 3) 
-
-    PHT = np.dot(P, H.T)
-    S = np.dot(H, PHT) + R
-    SI = np.linalg.inv(S) 
-
-    K = np.dot(PHT, SI)
-
-    IM = np.dot(H, X)
-    X = X + np.dot(K, (Z-IM))
-
-    _I = np.eye(3)
-    I_KH = _I - np.dot(K, H)
-    P = np.dot(np.dot(I_KH, P), I_KH.T) + np.dot(np.dot(K, R), K.T)
-
-    return X, P
-
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -191,49 +138,40 @@ class Trader:
 
         return orders
 
-    def compute_starfruit_fair_value(self, kf_state, midprice_measurement):
-        x, P = jsonpickle.decode(kf_state)
-        # print(x, P)
-        # 
-        # print(midprice_measurement)
-        # input()
+    def compute_starfruit_fair_value(self, best_bid, best_ask):
+        bid_gain = .5
+        ask_gain = .5 
+        threshold = 1
 
-        F = np.array([[1,1,.5],    # State Transition Model
-                      [0,1,1],
-                      [0,0,1]])  
-        H = np.array([[1, 0, 0]]) # Observation matrix
-        R = np.eye(1)             # Measurement Noise (diag)
-        Q = np.eye(3) * 0.00001                  # Process Noise     (diag)
+        if self.traderData["STARFRUIT"]["adjusted_bid"] is None:
+            adjusted_bid = best_bid
+        else:
+            previous_adjusted_bid = self.traderData["STARFRUIT"]["adjusted_bid"]
+            previous_bid = self.traderData["STARFRUIT"]["previous_bid"]
+            adjusted_bid = (previous_adjusted_bid + previous_bid * bid_gain) / (1 + bid_gain)
+        
+        if best_bid >= adjusted_bid + threshold:
+            self.traderData["STARFRUIT"]["adjusted_bid"] = adjusted_bid
+        else:
+            self.traderData["STARFRUIT"]["adjusted_bid"] = best_bid
+        self.traderData["STARFRUIT"]["previous_bid"] = best_bid
 
-        x, P = KF_predict(x, P, F, Q)
-        x, P = KF_update(midprice_measurement, x, P, H, R) 
+        if self.traderData["STARFRUIT"]["adjusted_ask"] is None:
+            adjusted_ask = best_ask
+        else:
+            previous_adjusted_ask = self.traderData["STARFRUIT"]["adjusted_ask"]
+            previous_ask = self.traderData["STARFRUIT"]["previous_ask"]
+            adjusted_ask = (previous_adjusted_ask + previous_ask * ask_gain) / (1 + ask_gain)
 
-        self.traderData["STARFRUIT"]["KF_state"] = jsonpickle.encode((x, P))
-
-        return int(round(x[0, 0]))
-
-    def compute_starfruit_ema(self, price):
-        for i, span in enumerate([8., 16., 32., 64., 128., 256., 512.]):
-            if self.traderData["STARFRUIT"]["EMA"][i] is None:
-                self.traderData["STARFRUIT"]["EMA"][i] = price
-                continue
-
-            alpha = 2.0 / (span + 1)
-            past_ema = self.traderData["STARFRUIT"]["EMA"][i]
-            self.traderData["STARFRUIT"]["EMA"][i] = past_ema * (1 - alpha) + price * alpha
-    
-    def compute_trend_adjustment(self):
-        ewmac_0 = self.traderData["STARFRUIT"]["EMA"][0] - self.traderData["STARFRUIT"]["EMA"][2]
-        ewmac_1 = self.traderData["STARFRUIT"]["EMA"][1] - self.traderData["STARFRUIT"]["EMA"][3]
-        ewmac_2 = self.traderData["STARFRUIT"]["EMA"][2] - self.traderData["STARFRUIT"]["EMA"][4]
-        ewmac_3 = self.traderData["STARFRUIT"]["EMA"][3] - self.traderData["STARFRUIT"]["EMA"][5]
-        ewmac_4 = self.traderData["STARFRUIT"]["EMA"][4] - self.traderData["STARFRUIT"]["EMA"][6]
-
-        return (int(ewmac_0 > 0) 
-        + int(ewmac_1 > 0) 
-        + int(ewmac_2 > 0) 
-        + int(ewmac_3 > 0) 
-        + int(ewmac_4 > 0)) / 5 
+        if best_ask <= adjusted_ask - threshold:
+            self.traderData["STARFRUIT"]["adjusted_ask"] = adjusted_ask
+        else:
+            self.traderData["STARFRUIT"]["adjusted_ask"] = best_ask
+        self.traderData["STARFRUIT"]["previous_ask"] = best_ask
+        
+        fair_price = (self.traderData["STARFRUIT"]["adjusted_ask"] + self.traderData["STARFRUIT"]["adjusted_bid"]) / 2.0 
+       
+        return int(round(fair_price))
 
     def compute_starfruit_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("STARFRUIT", 0)
@@ -247,47 +185,15 @@ class Trader:
     
         best_ask_pr = min(osell.keys())
         best_bid_pr = max(obuy.keys())
-
-        previous_ask = self.traderData["STARFRUIT"]["previous_ask"] 
-        self.traderData["STARFRUIT"]["previous_ask"] = best_ask_pr 
-        previous_bid = self.traderData["STARFRUIT"]["previous_bid"] 
-        self.traderData["STARFRUIT"]["previous_bid"] = best_bid_pr 
-        
+ 
         midprice = (best_ask_pr + best_bid_pr) / 2.0
-        previous_midprice = (previous_ask + previous_bid) / 2.0
-        if previous_midprice == 0:
-            midprice_measurement = midprice
-        else:
-            midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
-        fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
+        fair_value = self.compute_starfruit_fair_value(best_bid_pr, best_ask_pr)
 
-        self.compute_starfruit_ema(fair_value)
-        # trend_adjust = int(round(self.compute_trend_adjustment() * 1))
+        print(f"fair,{fair_value}")
+        print(f"midprice,{midprice}")
 
-        # print(f"fair,{fair_value}")
-        # print(f"midprice,{midprice}")
-        
-        # our_bid = fair_value - 2
-        # our_ask = fair_value + 2
-
-        if position > 10: # 10 < position <= 20
-            bid_adjust = -3
-            ask_adjust = +1
-        elif position >= 5: # 5 <= position <= 10
-            bid_adjust = -3
-            ask_adjust = +2
-        elif position > -5: # -5 < position < 5
-            bid_adjust = -2
-            ask_adjust = +2
-        elif position >= -10: # -10 <= position <= 5
-            bid_adjust = -2
-            ask_adjust = +3
-        else: # -20 <= position < -10
-            bid_adjust = -1
-            ask_adjust = +3
-
-        our_bid = fair_value + bid_adjust
-        our_ask = fair_value + ask_adjust
+        our_bid = fair_value - 2
+        our_ask = fair_value + 2
 
         bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
         sell_pr = max(best_ask_pr - 1, our_ask)
@@ -295,8 +201,8 @@ class Trader:
         # SUBMIT BUY ORDERS
         cpos = position
         
-        for ask, vol in osell.items():
-            if cpos < POSITION_LIMIT and ask <= min(previous_ask - 4, fair_value):
+        for ask, vol in osell.items(): 
+            if ((ask < fair_value) or ((position < 0) and (ask == fair_value))) and cpos < POSITION_LIMIT:
                 order_for = min(-vol, POSITION_LIMIT - cpos)
                 cpos += order_for
                 orders.append(Order("STARFRUIT", ask, order_for))
@@ -310,7 +216,7 @@ class Trader:
         cpos = position
 
         for bid, vol in obuy.items():
-            if cpos > -POSITION_LIMIT and bid >= max(previous_bid + 4, fair_value):
+            if ((bid > fair_value) or ((position > 0) and (bid == fair_value))) and cpos > -POSITION_LIMIT:
                 order_for = max(-vol, -POSITION_LIMIT-cpos)
                 cpos += order_for
                 orders.append(Order("STARFRUIT", bid, order_for))
@@ -324,12 +230,7 @@ class Trader:
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            # Init KF filter for STARFRUIT
-            order_depth = state.order_depths["STARFRUIT"] 
-            mid_price = (min(order_depth.sell_orders.keys()) + max(order_depth.buy_orders.keys())) / 2.0
-            P = np.eye(3) * 0.01 # State Uncertainty (diag) 
-            x = np.array([[mid_price],[0], [0]]) # Initial state
-            self.traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P)), "EMA": [None, None, None, None, None, None, None]}}
+            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}}
         else:
             self.traderData = json.loads(state.traderData) 
 
