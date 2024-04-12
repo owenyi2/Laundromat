@@ -138,8 +138,8 @@ def _DMA_ehma(prices: list, period: int) -> list:
 def DMA_v3(prices: list, wma_mode=True) -> list:
     # inputs
     hulllength = 7
-    emalength = 20
-    emagainlimit = 50
+    emalength = 22
+    emagainlimit = 75
     leasterror = 1000000.0
 
     src = prices[-1]
@@ -347,7 +347,6 @@ class Trader:
         else:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
         #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
-        print(len(self.traderData["STARFRUIT"]["MA_cache"]))
         cache_max = 30
         if len(self.traderData["STARFRUIT"]["MA_cache"]) == cache_max:
             self.traderData["STARFRUIT"]["MA_cache"].pop(0)

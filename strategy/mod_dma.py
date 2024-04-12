@@ -6,168 +6,6 @@ import jsonpickle
 from copy import deepcopy
 import numpy as np
 
-def reshape_z(z, dim_z, ndim):
-    """ensure z is a (dim_z, 1) shaped vector"""
-
-    z = np.atleast_2d(z)
-    if z.shape[1] == dim_z:
-        z = z.T
-
-    if z.shape != (dim_z, 1):
-        raise ValueError(
-            "z (shape {}) must be convertible to shape ({}, 1)".format(z.shape, dim_z)
-        )
-
-    if ndim == 1:
-        z = z[:, 0]
-
-    if ndim == 0:
-        z = z[0, 0]
-
-    return z
-
-# X :: State Matrix
-# P :: State Uncertainty
-# Q :: Process Uncertainty
-# R :: Measurement Uncertainty
-# F :: State Transition
-# H :: Observation Matrix
-
-# code sourced from <https://github.com/rlabbe/filterpy/blob/master/filterpy/kalman/kalman_filter.py#L133C7-L133C19> and <https://arxiv.org/ftp/arxiv/papers/1204/1204.0375.pdf> with modifications
-
-def KF_predict(X, P, F, Q):
-    X = np.dot(F, X)
-    P = np.dot(F, np.dot(P, F.T)) + Q
-
-    return X, P
-
-def KF_update(z, X, P, H, R):
-    Z = reshape_z(z, 1, 3) 
-
-    PHT = np.dot(P, H.T)
-    S = np.dot(H, PHT) + R
-    SI = np.linalg.inv(S) 
-
-    K = np.dot(PHT, SI)
-
-    IM = np.dot(H, X)
-    X = X + np.dot(K, (Z-IM))
-
-    _I = np.eye(3)
-    I_KH = _I - np.dot(K, H)
-    P = np.dot(np.dot(I_KH, P), I_KH.T) + np.dot(np.dot(K, R), K.T)
-
-    return X, P
-
-# Utility
-
-def avg(values: list) -> int:
-    if isinstance(values, int):
-        return values
-    match len(values):
-        case 0:
-            return 0
-        case 1:
-            return values[0]
-        case _:
-            return round(sum(values) / len(values))
-
-# SMA Implementations
-
-def SMA_standard(prices: list, period: int) -> list:
-    if not prices or period <= 0:
-        return prices
-
-    avgs = []
-    for i in range(len(prices)):
-        avgs.append(sum(prices[max(0, i-period):i+1]) / min(i+1, period))
-
-    return avgs
-
-# EMA Implementations
-
-def EMA_standard(prices: list, period: int, smoothing: int=2) -> list:
-    if not prices or period <= 0:
-        return prices
-    if not isinstance(prices, list):
-        alpha = smoothing / (period + 1)
-        return [(prices * alpha) + ((prices * (1 - alpha)))]
-    if period > len(prices):
-        return prices
-
-    avgs = [SMA_standard(prices, period)[-1]]
-    for i in range(1, len(prices)):
-        alpha = smoothing / (period + 1)
-        avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
-
-    return avgs
-
-# DMA Implementation
-# thanku dickson...
-
-def _DMA_wma(prices: list, period: int) -> list:
-    if not prices or period <= 0:
-        return prices
-    if not isinstance(prices, list):
-        return [prices]
-    if period > len(prices):
-        return prices
-
-    avgs = []
-    weights = [i + 1 for i in range(period)][::-1]
-    for i in range(len(prices)):
-        if i < period:
-            avgs.append(sum(prices[:i+1]) / (i+1))
-            continue
-        weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
-        avgs.append(weighted_sum / sum(weights))
-
-    return avgs
-
-def _DMA_hma(prices: list, period: int) -> int:
-    if not prices or period <= 0 or period > len(prices):
-        return prices
-    return _DMA_wma(2 * _DMA_wma(prices, int(period / 2))[-1] - _DMA_wma(prices, period)[-1], int(np.sqrt(period)))
-
-def _DMA_ehma(prices: list, period: int) -> list:
-    if not prices or period <= 0 or period > len(prices):
-        return prices
-    return EMA_standard(2 * EMA_standard(prices, int(period / 2))[-1] - EMA_standard(prices, period)[-1], int(np.sqrt(period)))
-
-# Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
-def DMA_v3(prices: list, wma_mode=True) -> list:
-    # inputs
-    hulllength = 7
-    emalength = 22
-    emagainlimit = 75
-    leasterror = 1000000.0
-
-    src = prices[-1]
-
-    #dma
-    alpha = 2 / (emalength + 1)
-    e0 = EMA_standard(prices, emalength)[-1]
-
-    gain = 0.0
-    bestgain = 0.0
-    error = 0.0
-    ec = 0.0
-
-    avgs = []
-    for i in range(emagainlimit):
-        gain = i / 10
-        ec = alpha * (e0 + gain * (src - ec)) + (1 - alpha) * ec # CHECK
-        error = abs(src - ec) # CHECK
-        if error < leasterror:
-            leasterror = error
-            bestgain = gain
-
-    ec = alpha * (e0 + bestgain * (src - ec)) + (1 - alpha) * ec # CHECK
-
-    if wma_mode:
-        return (ec + _DMA_hma(prices, hulllength)[-1]) / 2
-    return (ec + _DMA_ehma(prices, hulllength)[-1]) / 2
-
 
 class Logger:
     def __init__(self) -> None:
@@ -253,6 +91,7 @@ class Logger:
 
 logger = Logger()
 
+
 class Trader:
     def compute_amethysts_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("AMETHYSTS", 0)
@@ -301,26 +140,100 @@ class Trader:
 
         return orders
 
-    def compute_starfruit_fair_value(self, kf_state, midprice_measurement):
-        x, P = jsonpickle.decode(kf_state)
-        # print(x, P)
-        #
-        # print(midprice_measurement)
-        # input()
+    def compute_starfruit_fair_value(self, midprice: int) -> int:
+        cache_max = 50
 
-        F = np.array([[1,1,.5],    # State Transition Model
-                      [0,1,1],
-                      [0,0,1]])
-        H = np.array([[1, 0, 0]]) # Observation matrix
-        R = np.eye(1)             # Measurement Noise (diag)
-        Q = np.eye(3) * 0.00001                  # Process Noise     (diag)
+        if len(self.traderData["STARFRUIT"]["MA_cache"]) == cache_max:
+            self.traderData["STARFRUIT"]["MA_cache"].pop(0)
+        self.traderData["STARFRUIT"]["MA_cache"].append(midprice)
+        
+        return int(round(self.compute_starfruit_dma(self.traderData["STARFRUIT"]["MA_cache"])))
 
-        x, P = KF_predict(x, P, F, Q)
-        x, P = KF_update(midprice_measurement, x, P, H, R)
 
-        self.traderData["STARFRUIT"]["KF_state"] = jsonpickle.encode((x, P))
+    def compute_starfruit_sma(self, prices: list, period: int) -> list:
+        if not prices or period <= 0:
+            return prices
+        return [sum(prices[max(0, i-period):i+1]) / min(i+1, period) for i in range(len(prices))]
 
-        return int(round(x[0, 0]))
+    def compute_starfruit_ema(self, prices: list, period: int, smoothing: int=2) -> list:
+        if not prices or period <= 0:
+            return prices
+        alpha = smoothing / (period + 1)
+        if not isinstance(prices, list):
+            return [(prices * alpha) + ((prices * (1 - alpha)))]
+        if period > len(prices):
+            return prices
+
+        avgs = [self.compute_starfruit_sma(prices, period)[-1]]
+        for i in range(1, len(prices)):
+            avgs.append((prices[i] * alpha) + (prices[i-1] * (1 - alpha)))
+
+        return avgs
+
+    # DMA Implementation
+
+    def compute_starfruit_wma(self, prices: list, period: int) -> list:
+        if not prices or period <= 0:
+            return prices
+        if not isinstance(prices, list):
+            return [prices]
+        if period > len(prices):
+            return prices
+
+        avgs = []
+        weights = [i + 1 for i in range(period)][::-1]
+        for i in range(len(prices)):
+            if i < period:
+                avgs.append(sum(prices[:i+1]) / (i+1))
+                continue
+            weighted_sum = sum([prices[i - j] * weights[j] for j in range(period)])
+            avgs.append(weighted_sum / sum(weights))
+
+        return avgs
+
+    def compute_starfruit_hma(self, prices: list, period: int) -> int:
+        if not prices or period <= 0 or period > len(prices):
+            return prices
+        return self.compute_starfruit_wma(2 * self.compute_starfruit_wma(prices, int(period / 2))[-1] - self.compute_starfruit_wma(prices, period)[-1], int(np.sqrt(period)))
+
+    def compute_starfruit_ehma(self, prices: list, period: int) -> list:
+        if not prices or period <= 0 or period > len(prices):
+            return prices
+        return self.compute_starfruit_ema(2 * self.compute_starfruit_ema(prices, int(period / 2))[-1] - self.compute_starfruit_ema(prices, period)[-1], int(np.sqrt(period)))
+
+    # Translated from: https://www.tradingview.com/script/8MEEEGWl-Dickinson-Moving-Average-DMA/
+    def compute_starfruit_dma(self, prices: list, wma_mode=True) -> list:
+        # inputs
+        hull_length = 8
+        ema_length = 28
+        ema_gain_limit = 42
+        least_error = 1000000.0
+
+        price = prices[-1]
+
+        #dma
+        alpha = 2 / (ema_length + 1)
+        ema_initial = self.compute_starfruit_ema(prices, ema_length)[-1]
+
+        gain = 0.0
+        best_gain = 0.0
+        error = 0.0
+        ema_current = 0.0
+
+        avgs = []
+        for i in range(ema_gain_limit):
+            gain = i / 10
+            ema_current = alpha * (ema_initial + gain * (price - ema_current)) + (1 - alpha) * ema_current # CHECK
+            error = abs(price - ema_current) # CHECK
+            if error < least_error:
+                least_error = error
+                best_gain = gain
+
+        ema_current = alpha * (ema_initial + best_gain * (price - ema_current)) + (1 - alpha) * ema_current # CHECK
+
+        if wma_mode:
+            return (ema_current + self.compute_starfruit_hma(prices, hull_length)[-1]) / 2
+        return (ema_current + self.compute_starfruit_ehma(prices, hull_length)[-1]) / 2
 
     def compute_starfruit_order(self, state: TradingState) -> list[Order]:
         position = state.position.get("STARFRUIT", 0)
@@ -346,19 +259,43 @@ class Trader:
             midprice_measurement = midprice
         else:
             midprice_measurement = np.clip(midprice, previous_midprice - 2, previous_midprice + 2) # clip outliers
-        #fair_value = self.compute_starfruit_fair_value(self.traderData["STARFRUIT"]["KF_state"], midprice_measurement)
-        cache_max = 30
-        if len(self.traderData["STARFRUIT"]["MA_cache"]) == cache_max:
-            self.traderData["STARFRUIT"]["MA_cache"].pop(0)
-        self.traderData["STARFRUIT"]["MA_cache"].append(midprice)
-        fair_value = int(DMA_v3(self.traderData["STARFRUIT"]["MA_cache"], False))
+        fair_value = self.compute_starfruit_fair_value(midprice)
+
+        # compare with crossover using 50 day sma then 20 day sma
+        fiftydma = self.compute_starfruit_sma(self.traderData["STARFRUIT"]["MA_cache"], 50)
+        twentydma = self.compute_starfruit_sma(self.traderData["STARFRUIT"]["MA_cache"], 20)
+        golden_cross = False
+        if len(fiftydma) > 1 and fiftydma[-1] > fair_value and fiftydma[-2] <= fair_value:
+            if twentydma[-1] > fair_value and twentydma[-2] <= fair_value:
+                golden_cross = True
+        death_cross = False
+        if len(fiftydma) > 1 and fiftydma[-1] < fair_value and fiftydma[-2] >= fair_value:
+            if twentydma[-1] < fair_value and twentydma[-2] >= fair_value:
+                death_cross = True
 
         print(f"{fair_value},{midprice}")
         #print(f"fair,{fair_value}")
         #print(f"midprice,{midprice}")
 
-        our_bid = fair_value - 2
-        our_ask = fair_value + 2
+        # borrowed from owyi branch
+        if position > 10: # 10 < position <= 20
+            bid_adjust = -3
+            ask_adjust = +1
+        elif position >= 5: # 5 <= position <= 10
+            bid_adjust = -3
+            ask_adjust = +2
+        elif position > -5: # -5 < position < 5
+            bid_adjust = -2
+            ask_adjust = +2
+        elif position >= -10: # -10 <= position <= 5
+            bid_adjust = -2
+            ask_adjust = +3
+        else: # -20 <= position < -10
+            bid_adjust = -1
+            ask_adjust = +3
+
+        our_bid = fair_value + bid_adjust
+        our_ask = fair_value + ask_adjust
 
         bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
         sell_pr = max(best_ask_pr - 1, our_ask)
@@ -367,29 +304,29 @@ class Trader:
         cpos = position
 
         for ask, vol in osell.items():
-            if cpos < POSITION_LIMIT and ask <= min(previous_ask - 4, fair_value):
+            if cpos < POSITION_LIMIT and ((golden_cross and ask <= fair_value) or ask <= min(previous_ask - 4, fair_value)):
                 order_for = min(-vol, POSITION_LIMIT - cpos)
                 cpos += order_for
                 orders.append(Order("STARFRUIT", ask, order_for))
 
-        if cpos < POSITION_LIMIT:
+        """if cpos < POSITION_LIMIT:
             num = POSITION_LIMIT - cpos
             orders.append(Order("STARFRUIT", bid_pr, num))
-            cpos += num
+            cpos += num"""
 
         # SUBMIT SELL ORDERS
         cpos = position
 
         for bid, vol in obuy.items():
-            if cpos > -POSITION_LIMIT and bid >= max(previous_bid + 4, fair_value):
+            if cpos > -POSITION_LIMIT and ((death_cross and bid >= fair_value) or bid >= max(previous_bid + 4, fair_value)):
                 order_for = max(-vol, -POSITION_LIMIT-cpos)
                 cpos += order_for
                 orders.append(Order("STARFRUIT", bid, order_for))
 
-        if cpos > -POSITION_LIMIT:
+        """if cpos > -POSITION_LIMIT:
             num = -POSITION_LIMIT-cpos
             orders.append(Order("STARFRUIT", sell_pr, num))
-            cpos += num
+            cpos += num"""
 
         return orders
 
@@ -416,4 +353,3 @@ class Trader:
         traderData = json.dumps(self.traderData)
         logger.flush(state, orders, conversions, traderData)
         return orders, conversions, traderData
-
