@@ -38,8 +38,8 @@ for idx, row in df.iterrows():
 
     [predictions[i].append(p(n-1 + i)) for i in range(look_ahead)]
     predictions["coeff_1"].append(coeffs[0])
-    predictions["coeff_2"].append(coeffs[2])
-    predictions["coeff_3"].append(coeffs[3])
+    predictions["coeff_2"].append(coeffs[1])
+    predictions["coeff_3"].append(coeffs[2])
     
     index.append(idx)
 
