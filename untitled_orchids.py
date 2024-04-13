@@ -91,56 +91,102 @@ class Logger:
 logger = Logger()
 
 class Trader:
+    def compute_orchids_fair_value(self, best_bid, best_ask):
+        bid_gain = .5
+        ask_gain = .5 
+        threshold = 1
+
+        if self.traderData["ORCHIDS"]["adjusted_bid"] is None:
+            adjusted_bid = best_bid
+        else:
+            previous_adjusted_bid = self.traderData["ORCHIDS"]["adjusted_bid"]
+            previous_bid = self.traderData["ORCHIDS"]["previous_bid"]
+            adjusted_bid = (previous_adjusted_bid + previous_bid * bid_gain) / (1 + bid_gain)
+        
+        if best_bid >= adjusted_bid + threshold:
+            self.traderData["ORCHIDS"]["adjusted_bid"] = adjusted_bid
+        else:
+            self.traderData["ORCHIDS"]["adjusted_bid"] = best_bid
+        self.traderData["ORCHIDS"]["previous_bid"] = best_bid
+
+        if self.traderData["ORCHIDS"]["adjusted_ask"] is None:
+            adjusted_ask = best_ask
+        else:
+            previous_adjusted_ask = self.traderData["ORCHIDS"]["adjusted_ask"]
+            previous_ask = self.traderData["ORCHIDS"]["previous_ask"]
+            adjusted_ask = (previous_adjusted_ask + previous_ask * ask_gain) / (1 + ask_gain)
+
+        if best_ask <= adjusted_ask - threshold:
+            self.traderData["ORCHIDS"]["adjusted_ask"] = adjusted_ask
+        else:
+            self.traderData["ORCHIDS"]["adjusted_ask"] = best_ask
+        self.traderData["ORCHIDS"]["previous_ask"] = best_ask
+        
+        fair_price = (self.traderData["ORCHIDS"]["adjusted_ask"] + self.traderData["ORCHIDS"]["adjusted_bid"]) / 2.0 
+       
+        return int(round(fair_price))
+
     def handle_orchids(self, state: TradingState) -> tuple[list[Order], int]:
         position = state.position.get("ORCHIDS", 0)
         order_depth: OrderDepth = state.order_depths["ORCHIDS"]
         observation: Observation = state.observations.conversionObservations["ORCHIDS"]
 
-        logger.print(observation)
-        logger.print(jsonpickle.encode(observation))
+        logger.print(jsonpickle.encode(observation)) # important for the regex parsing of output
 
         orders: list[Order] = []
         conversions: int = 0
          
         POSITION_LIMIT = 100
 
-
-
+        osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
 
-        import_askprice = observation.askPrice
-        transport_fee = observation.transportFees
-        import_tariff = observation.importTariff # generally negative i.e. obtain for importing
-        uncertainty = 2
+        best_ask_pr = min(osell.keys())
+        best_bid_pr = max(obuy.keys())
+ 
+        fair_value = self.compute_orchids_fair_value(best_bid_pr, best_ask_pr)
+     
+        if position > 10: # 10 < position <= 20
+            bid_adjust = -3
+            ask_adjust = +1
+        elif position >= 5: # 5 <= position <= 10
+            bid_adjust = -3
+            ask_adjust = +2
+        elif position > -5: # -5 < position < 5
+            bid_adjust = -2
+            ask_adjust = +2
+        elif position >= -10: # -10 <= position <= 5
+            bid_adjust = -2
+            ask_adjust = +3
+        else: # -20 <= position < -10
+            bid_adjust = -1
+            ask_adjust = +3
 
-        procurement_cost = import_askprice + transport_fee + import_tariff + uncertainty
+        our_bid = fair_value + bid_adjust
+        our_ask = fair_value + ask_adjust
 
-        logger.print(procurement_cost)
+        bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
+        sell_pr = max(best_ask_pr - 1, our_ask)
 
         cpos = position
 
-        for bid, vol in obuy.items():
-            if (bid >= procurement_cost) and cpos > -POSITION_LIMIT: 
-                order_for = max(-vol, -POSITION_LIMIT-cpos)
-                cpos += order_for
-                orders.append(Order("STARFRUIT", bid, order_for))
-                conversions -= order_for
+        if cpos < POSITION_LIMIT:
+            num = POSITION_LIMIT - cpos
+            orders.append(Order("ORCHIDS", bid_pr, num))
+            cpos += num
 
-        logger.print(conversions)
+        cpos = position
 
-        # IMPLEMENT AN IMPORTER STRATEGY
-
-        # Estimate the lowest price you can feasibly import for
-          # This will be current ASK + import premia (negative) + transport cost + UNCERTAINTY
-          # UNCERTAINTY is due to the fact that ASK may increase on the next timestamp
-        # Market Take any bids whose bid price is above this 
-        # Accumulate an overall negative position so as to avoid Storage costs
+        if cpos > -POSITION_LIMIT:
+            num = -POSITION_LIMIT-cpos
+            orders.append(Order("ORCHIDS", sell_pr, num))
+            cpos += num
         
         return orders, conversions 
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}}
+            self.traderData = {"ORCHIDS": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}}
         else:
             self.traderData = json.loads(state.traderData) 
 
