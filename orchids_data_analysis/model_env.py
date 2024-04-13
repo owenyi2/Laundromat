@@ -10,8 +10,9 @@ PREDICTIONS = 20
 DF_raw = pd.read_csv(file_name, sep=";")
 DF = DF_raw[["timestamp", "SUNLIGHT", "HUMIDITY"]]
 #print(DF)
+model = LinearRegression()
 
-def predict(df, key, learn=10):
+def predict(df, key, model, learn=10):
     prev = df.tail(learn)
     prev["timestamp_sq"] = prev["timestamp"] ** 2
 
@@ -21,7 +22,6 @@ def predict(df, key, learn=10):
     next_time = time[-1] + 1
     y = prev[key].to_numpy()
 
-    model = LinearRegression()
     model.fit(X, y)
 
     pred_feat = np.array([next_time, next_time ** 2])
@@ -31,8 +31,8 @@ def predict(df, key, learn=10):
 
 print("timestamp,SUNLIGHT,HUMIDITY")
 for i in range(PREDICTIONS):
-    t, sun = predict(DF, "SUNLIGHT")
-    t, hum = predict(DF, "HUMIDITY")
+    t, sun = predict(DF, "SUNLIGHT", model)
+    t, hum = predict(DF, "HUMIDITY", model)
     DF.loc[len(DF.index)] = [t, sun, hum]
     print(f"{t},{sun},{hum}")
 
