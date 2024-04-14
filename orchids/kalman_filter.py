@@ -59,7 +59,7 @@ def KF_update(z, X, P, H, R):
 
 df = pd.read_csv("parse/merged_data.csv", index_col = 0)
 print(df)
-orchid_prices = df["mid_price"].values
+orchid_prices = df["bid_price_1"].values
 
 P = np.eye(3) * 1e-5 # State Uncertainty (diag) 
 x = np.array([[orchid_prices[0]],[0], [0]]) # Initial state
@@ -71,7 +71,7 @@ F = np.array([[1,1, .5],    # State Transition Model
 
 H = np.array([[1, 0, 0]])
 R = np.eye(1)         # Measurement Noise (diag)
-Q = np.eye(3) * 1e-9 # Process Noise     (diag)
+Q = np.eye(3) * 1e-2 # Process Noise     (diag)
 
 X = []
 M = []
@@ -99,8 +99,8 @@ fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 ax.plot(M.astype(int))
 ax.plot(X.astype(int))
 
-twin1 = ax.twinx()
-twin1.plot(X_dot, color="tab:green")
-twin1.plot(pd.Series(data=0, index=T))
+# twin1 = ax.twinx()
+# twin1.plot(X_dot, color="tab:green")
+# twin1.plot(pd.Series(data=0, index=T))
 
 plt.show()

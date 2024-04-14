@@ -6,59 +6,6 @@ import jsonpickle
 from copy import deepcopy
 import numpy as np
 
-def reshape_z(z, dim_z, ndim):
-    """ensure z is a (dim_z, 1) shaped vector"""
-
-    z = np.atleast_2d(z)
-    if z.shape[1] == dim_z:
-        z = z.T
-
-    if z.shape != (dim_z, 1):
-        raise ValueError(
-            "z (shape {}) must be convertible to shape ({}, 1)".format(z.shape, dim_z)
-        )
-
-    if ndim == 1:
-        z = z[:, 0]
-
-    if ndim == 0:
-        z = z[0, 0]
-
-    return z
-
-# X :: State Matrix
-# P :: State Uncertainty
-# Q :: Process Uncertainty
-# R :: Measurement Uncertainty
-# F :: State Transition
-# H :: Observation Matrix
-
-# code sourced from <https://github.com/rlabbe/filterpy/blob/master/filterpy/kalman/kalman_filter.py#L133C7-L133C19> and <https://arxiv.org/ftp/arxiv/papers/1204/1204.0375.pdf> with modifications
-
-def KF_predict(X, P, F, Q):
-    X = np.dot(F, X)
-    P = np.dot(F, np.dot(P, F.T)) + Q
-
-    return X, P
-
-def KF_update(z, X, P, H, R):
-    Z = reshape_z(z, 1, 3) 
-
-    PHT = np.dot(P, H.T)
-    S = np.dot(H, PHT) + R
-    SI = np.linalg.inv(S) 
-
-    K = np.dot(PHT, SI)
-
-    IM = np.dot(H, X)
-    X = X + np.dot(K, (Z-IM))
-
-    _I = np.eye(3)
-    I_KH = _I - np.dot(K, H)
-    P = np.dot(np.dot(I_KH, P), I_KH.T) + np.dot(np.dot(K, R), K.T)
-
-    return X, P
-
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -144,74 +91,68 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def orchids_apply_kalman(self, kf_state, midprice):
-        x, P = jsonpickle.decode(kf_state)
-
-        F = np.array([[1,1,.5],    # State Transition Model
-                      [0,1,1],
-                      [0,0,1]])  
-        H = np.array([[1, 0, 0]]) # Observation matrix
-        R = np.eye(1)             # Measurement Noise (diag)
-        Q = np.eye(3) * 1e-9# Process Noise     (diag) 
-
-        x, P = KF_predict(x, P, F, Q)
-        x, P = KF_update(midprice, x, P, H, R) 
-
-        self.traderData["ORCHIDS"]["KF_state"] = jsonpickle.encode((x, P))
-
-        return x[1, 0]
-
     def handle_orchids(self, state: TradingState) -> tuple[list[Order], int]:
         position = state.position.get("ORCHIDS", 0)
         order_depth: OrderDepth = state.order_depths["ORCHIDS"]
         orders: list[Order] = []
+        conversion: int = 0
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
 
+        observation: Observation = state.observations.conversionObservations["ORCHIDS"]
+
         POSITION_LIMIT = 100
-        DESIRED_NEUTRAL_POSITION = -50
-        best_ask_pr = min(osell.keys())
-        best_bid_pr = max(obuy.keys())
 
-        midprice = (best_ask_pr + best_bid_pr) / 2.0
-
-        # So the bid ask spread is quite shit.
-        # If we trade by taking the domestic bid and taking the international ask, the spread is more favourable
-
-        price_velocity = self.orchids_apply_kalman(self.traderData["ORCHIDS"]["KF_state"], midprice)
-        logger.print(price_velocity)
+        DOMESTIC_LOOKBACK = 10
+        INTERNATIONAL_LOOKBACK = 50
         
-        desired_position = max(-POSITION_LIMIT, int(round(POSITION_LIMIT * price_velocity)) + DESIRED_NEUTRAL_POSITION)
-        conversion = 0
-        max_deviation = 5
+        domestic_bid = max(obuy.keys())
 
-        # We need a method to determine when domestic prices are high so we can short them
-        # And then a method to know when international prices are low so we can close our shorts all at once.
+        international_ask = observation.askPrice
+        transport_fee = observation.transportFees
+        import_tariff = observation.importTariff 
 
-        if position < desired_position and abs(position - desired_position) > max_deviation: # we want to buy
-            # REPLACE WITH CONVERSION
-            ask, vol = next(iter(osell.items()))
-            buy_volume = min(desired_position - position, -vol) 
-            order_for = min(buy_volume, POSITION_LIMIT - position)
-            conversion = max(-position, order_for)
-        
-        if position > desired_position and abs(position - desired_position) > max_deviation: # we want to sell
-            bid, vol = next(iter(obuy.items()))
-            sell_volume = max(desired_position - position, -vol)
-            order_for = max(sell_volume, -POSITION_LIMIT - position)
-            orders.append(Order("ORCHIDS", bid, order_for))
-            
+        real_international_ask = international_ask + transport_fee + import_tariff
+
+        domestic_bid_hist = self.traderData["ORCHIDS"]["domestic_bid"]
+        domestic_bid_hist.append(domestic_bid)
+        domestic_bid_hist = domestic_bid_hist[-DOMESTIC_LOOKBACK:]
+        self.traderData["ORCHIDS"]["domestic_bid"] = domestic_bid_hist
+
+        real_international_ask_hist = self.traderData["ORCHIDS"]["real_international_ask"]
+        real_international_ask_hist.append(real_international_ask)
+        real_international_ask_hist = real_international_ask_hist[-INTERNATIONAL_LOOKBACK:]
+        self.traderData["ORCHIDS"]["real_international_ask"] = real_international_ask_hist
+
+        cpos = position
+
+        if len(domestic_bid_hist) == DOMESTIC_LOOKBACK:
+            domestic_bid_hist = np.array(domestic_bid_hist)
+            z_score = (domestic_bid_hist[-1] - domestic_bid_hist.mean())/domestic_bid_hist.std()
+
+            logger.print("domestic_bid z_score", z_score)
+
+            if z_score > .5:
+                bid, vol = next(iter(obuy.items()))
+                order_for = max(-vol, -POSITION_LIMIT - cpos)
+                cpos += order_for 
+                orders.append(Order("ORCHIDS", bid, order_for))
+
+        if len(real_international_ask_hist) == INTERNATIONAL_LOOKBACK:
+            real_international_ask_hist = np.array(real_international_ask_hist)
+            z_score = (real_international_ask_hist[-1] - real_international_ask_hist.mean()) / real_international_ask_hist.std()
+
+            logger.print("real_international_ask z_score", z_score)
+
+            if z_score < -.5 and cpos < 0:
+                conversion = -cpos
+
         return orders, conversion
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            # Init KF filter for ORCHIDS
-            order_depth = state.order_depths["ORCHIDS"] 
-            mid_price = (min(order_depth.sell_orders.keys()) + max(order_depth.buy_orders.keys())) / 2.0
-            P = np.eye(3) * 0.01 # State Uncertainty (diag) 
-            x = np.array([[mid_price],[0], [0]]) # Initial state
-            self.traderData = {"ORCHIDS": {"KF_state": jsonpickle.encode((x, P))}} 
+            self.traderData = {"ORCHIDS": {"domestic_bid": [], "real_international_ask": []}} 
         else:
             self.traderData = json.loads(state.traderData) 
 
