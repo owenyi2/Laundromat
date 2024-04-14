@@ -61,7 +61,7 @@ df = pd.read_csv("parse/merged_data.csv", index_col = 0)
 print(df)
 orchid_prices = df["mid_price"].values
 
-P = np.eye(3) * 0.01 # State Uncertainty (diag) 
+P = np.eye(3) * 1e-5 # State Uncertainty (diag) 
 x = np.array([[orchid_prices[0]],[0], [0]]) # Initial state
 traderData = {"STARFRUIT": {"previous_ask": 1e9, "previous_bid": -1e9, "KF_state": jsonpickle.encode((x, P))}}
 
@@ -71,7 +71,7 @@ F = np.array([[1,1, .5],    # State Transition Model
 
 H = np.array([[1, 0, 0]])
 R = np.eye(1)         # Measurement Noise (diag)
-Q = np.eye(3) * 0.000001 # Process Noise     (diag)
+Q = np.eye(3) * 1e-9 # Process Noise     (diag)
 
 X = []
 M = []

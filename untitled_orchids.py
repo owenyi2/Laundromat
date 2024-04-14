@@ -6,6 +6,59 @@ import jsonpickle
 from copy import deepcopy
 import numpy as np
 
+def reshape_z(z, dim_z, ndim):
+    """ensure z is a (dim_z, 1) shaped vector"""
+
+    z = np.atleast_2d(z)
+    if z.shape[1] == dim_z:
+        z = z.T
+
+    if z.shape != (dim_z, 1):
+        raise ValueError(
+            "z (shape {}) must be convertible to shape ({}, 1)".format(z.shape, dim_z)
+        )
+
+    if ndim == 1:
+        z = z[:, 0]
+
+    if ndim == 0:
+        z = z[0, 0]
+
+    return z
+
+# X :: State Matrix
+# P :: State Uncertainty
+# Q :: Process Uncertainty
+# R :: Measurement Uncertainty
+# F :: State Transition
+# H :: Observation Matrix
+
+# code sourced from <https://github.com/rlabbe/filterpy/blob/master/filterpy/kalman/kalman_filter.py#L133C7-L133C19> and <https://arxiv.org/ftp/arxiv/papers/1204/1204.0375.pdf> with modifications
+
+def KF_predict(X, P, F, Q):
+    X = np.dot(F, X)
+    P = np.dot(F, np.dot(P, F.T)) + Q
+
+    return X, P
+
+def KF_update(z, X, P, H, R):
+    Z = reshape_z(z, 1, 3) 
+
+    PHT = np.dot(P, H.T)
+    S = np.dot(H, PHT) + R
+    SI = np.linalg.inv(S) 
+
+    K = np.dot(PHT, SI)
+
+    IM = np.dot(H, X)
+    X = X + np.dot(K, (Z-IM))
+
+    _I = np.eye(3)
+    I_KH = _I - np.dot(K, H)
+    P = np.dot(np.dot(I_KH, P), I_KH.T) + np.dot(np.dot(K, R), K.T)
+
+    return X, P
+
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -91,102 +144,74 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def compute_orchids_fair_value(self, best_bid, best_ask):
-        bid_gain = .5
-        ask_gain = .5 
-        threshold = 1
+    def orchids_apply_kalman(self, kf_state, midprice):
+        x, P = jsonpickle.decode(kf_state)
 
-        if self.traderData["ORCHIDS"]["adjusted_bid"] is None:
-            adjusted_bid = best_bid
-        else:
-            previous_adjusted_bid = self.traderData["ORCHIDS"]["adjusted_bid"]
-            previous_bid = self.traderData["ORCHIDS"]["previous_bid"]
-            adjusted_bid = (previous_adjusted_bid + previous_bid * bid_gain) / (1 + bid_gain)
-        
-        if best_bid >= adjusted_bid + threshold:
-            self.traderData["ORCHIDS"]["adjusted_bid"] = adjusted_bid
-        else:
-            self.traderData["ORCHIDS"]["adjusted_bid"] = best_bid
-        self.traderData["ORCHIDS"]["previous_bid"] = best_bid
+        F = np.array([[1,1,.5],    # State Transition Model
+                      [0,1,1],
+                      [0,0,1]])  
+        H = np.array([[1, 0, 0]]) # Observation matrix
+        R = np.eye(1)             # Measurement Noise (diag)
+        Q = np.eye(3) * 1e-9# Process Noise     (diag) 
 
-        if self.traderData["ORCHIDS"]["adjusted_ask"] is None:
-            adjusted_ask = best_ask
-        else:
-            previous_adjusted_ask = self.traderData["ORCHIDS"]["adjusted_ask"]
-            previous_ask = self.traderData["ORCHIDS"]["previous_ask"]
-            adjusted_ask = (previous_adjusted_ask + previous_ask * ask_gain) / (1 + ask_gain)
+        x, P = KF_predict(x, P, F, Q)
+        x, P = KF_update(midprice, x, P, H, R) 
 
-        if best_ask <= adjusted_ask - threshold:
-            self.traderData["ORCHIDS"]["adjusted_ask"] = adjusted_ask
-        else:
-            self.traderData["ORCHIDS"]["adjusted_ask"] = best_ask
-        self.traderData["ORCHIDS"]["previous_ask"] = best_ask
-        
-        fair_price = (self.traderData["ORCHIDS"]["adjusted_ask"] + self.traderData["ORCHIDS"]["adjusted_bid"]) / 2.0 
-       
-        return int(round(fair_price))
+        self.traderData["ORCHIDS"]["KF_state"] = jsonpickle.encode((x, P))
+
+        return x[1, 0]
 
     def handle_orchids(self, state: TradingState) -> tuple[list[Order], int]:
         position = state.position.get("ORCHIDS", 0)
         order_depth: OrderDepth = state.order_depths["ORCHIDS"]
-        observation: Observation = state.observations.conversionObservations["ORCHIDS"]
-
-        logger.print(jsonpickle.encode(observation)) # important for the regex parsing of output
-
         orders: list[Order] = []
-        conversions: int = 0
-         
-        POSITION_LIMIT = 100
 
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
 
+        POSITION_LIMIT = 100
+        DESIRED_NEUTRAL_POSITION = -50
         best_ask_pr = min(osell.keys())
         best_bid_pr = max(obuy.keys())
- 
-        fair_value = self.compute_orchids_fair_value(best_bid_pr, best_ask_pr)
-     
-        if position > 10: # 10 < position <= 20
-            bid_adjust = -3
-            ask_adjust = +1
-        elif position >= 5: # 5 <= position <= 10
-            bid_adjust = -3
-            ask_adjust = +2
-        elif position > -5: # -5 < position < 5
-            bid_adjust = -2
-            ask_adjust = +2
-        elif position >= -10: # -10 <= position <= 5
-            bid_adjust = -2
-            ask_adjust = +3
-        else: # -20 <= position < -10
-            bid_adjust = -1
-            ask_adjust = +3
 
-        our_bid = fair_value + bid_adjust
-        our_ask = fair_value + ask_adjust
+        midprice = (best_ask_pr + best_bid_pr) / 2.0
 
-        bid_pr = min(best_bid_pr + 1, our_bid) # we will shift this by 1 to beat this price
-        sell_pr = max(best_ask_pr - 1, our_ask)
+        # So the bid ask spread is quite shit.
+        # If we trade by taking the domestic bid and taking the international ask, the spread is more favourable
 
-        cpos = position
-
-        if cpos < POSITION_LIMIT:
-            num = POSITION_LIMIT - cpos
-            orders.append(Order("ORCHIDS", bid_pr, num))
-            cpos += num
-
-        cpos = position
-
-        if cpos > -POSITION_LIMIT:
-            num = -POSITION_LIMIT-cpos
-            orders.append(Order("ORCHIDS", sell_pr, num))
-            cpos += num
+        price_velocity = self.orchids_apply_kalman(self.traderData["ORCHIDS"]["KF_state"], midprice)
+        logger.print(price_velocity)
         
-        return orders, conversions 
+        desired_position = max(-POSITION_LIMIT, int(round(POSITION_LIMIT * price_velocity)) + DESIRED_NEUTRAL_POSITION)
+        conversion = 0
+        max_deviation = 5
+
+        # We need a method to determine when domestic prices are high so we can short them
+        # And then a method to know when international prices are low so we can close our shorts all at once.
+
+        if position < desired_position and abs(position - desired_position) > max_deviation: # we want to buy
+            # REPLACE WITH CONVERSION
+            ask, vol = next(iter(osell.items()))
+            buy_volume = min(desired_position - position, -vol) 
+            order_for = min(buy_volume, POSITION_LIMIT - position)
+            conversion = max(-position, order_for)
+        
+        if position > desired_position and abs(position - desired_position) > max_deviation: # we want to sell
+            bid, vol = next(iter(obuy.items()))
+            sell_volume = max(desired_position - position, -vol)
+            order_for = max(sell_volume, -POSITION_LIMIT - position)
+            orders.append(Order("ORCHIDS", bid, order_for))
+            
+        return orders, conversion
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"ORCHIDS": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}}
+            # Init KF filter for ORCHIDS
+            order_depth = state.order_depths["ORCHIDS"] 
+            mid_price = (min(order_depth.sell_orders.keys()) + max(order_depth.buy_orders.keys())) / 2.0
+            P = np.eye(3) * 0.01 # State Uncertainty (diag) 
+            x = np.array([[mid_price],[0], [0]]) # Initial state
+            self.traderData = {"ORCHIDS": {"KF_state": jsonpickle.encode((x, P))}} 
         else:
             self.traderData = json.loads(state.traderData) 
 
