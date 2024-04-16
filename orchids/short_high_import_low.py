@@ -6,15 +6,17 @@ import matplotlib.pyplot as plt
 
 df = pd.read_csv("parse/merged_data.csv", index_col = 0)
 print(df)
+data_bottle = pd.read_csv("round-2-island-data-bottle/prices_round_2_day_1.csv", sep=";")
 
 fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 
 dom_ewma = df["bid_price_1"].ewm(span=10).mean()
 dom_ewms = df["bid_price_1"].ewm(span=10).std()
 
-real_int_ask = df["askPrice"] + df["importTariff"] + df["transportFee"]
+real_int_ask = 0.75+data_bottle["ORCHIDS"] + data_bottle["IMPORT_TARIFF"]+data_bottle["TRANSPORT_FEES"]
 int_ewma = real_int_ask.ewm(span=50).mean()
 int_ewms = real_int_ask.ewm(span=50).std()
+signal_ewma = real_int_ask.ewm(span = 100).mean()
 
 ax.plot(df["bid_price_1"], label = "dom. bid")
 ax.plot(dom_ewma - dom_ewms, color="navy", alpha = 0.5)
@@ -22,7 +24,10 @@ ax.plot(dom_ewma + dom_ewms, color="navy", alpha = 0.5)
 
 ax.plot(real_int_ask, label="real int. ask")
 ax.plot(int_ewma - int_ewms, color="chocolate", alpha = 0.5)
+ax.plot(int_ewma, color="chocolate", alpha = 0.5)
 ax.plot(int_ewma + int_ewms, color="chocolate", alpha = 0.5)
+ax.plot(signal_ewma, color="red", alpha = 0.5)
+
 
 ax.legend(loc="best")
 

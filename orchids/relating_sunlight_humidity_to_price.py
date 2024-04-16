@@ -16,6 +16,8 @@ for i in range(-1, 2):
 
 fig = plt.figure(figsize=(15, 6))
 
+ax_all = fig.add_subplot(1, 5, 4)
+
 for i in range(-1, 2):
     file_name = f"round-2-island-data-bottle/prices_round_2_day_{i}.csv"
     df = pd.read_csv(file_name, index_col = 0, sep=";")
@@ -24,20 +26,23 @@ for i in range(-1, 2):
     X = df[["HUMIDITY", "SUNLIGHT"]]
     y = df["ORCHIDS"]
     ax = fig.add_subplot(1, 5, i+2)
-    ax.scatter(X["HUMIDITY"], X["SUNLIGHT"], c = y, cmap="bwr")
-    ax.annotate("beginning", (X["HUMIDITY"].values[0], X["SUNLIGHT"].values[0]))
-    ax.annotate("end", (X["HUMIDITY"].values[-1], X["SUNLIGHT"].values[-1]))
+    ax.scatter(X["HUMIDITY"].diff(), X["SUNLIGHT"].rolling(10).mean(), c = y, cmap="bwr")
+    ax.annotate("beginning", (X["HUMIDITY"].values[0], X["SUNLIGHT"].values[0]), color="xkcd:yellow")
+    ax.annotate("end", (X["HUMIDITY"].values[-1], X["SUNLIGHT"].values[-1]), color="xkcd:yellow")
     ax.set_xlabel("HUMIDITY")
     ax.set_ylabel("SUNLIGHT")
+    ax.set_facecolor("black")
+
+    ax_all.scatter(X["HUMIDITY"].diff(), X["SUNLIGHT"].cumsum(), c = y, cmap="bwr")
 
 df = pd.concat(dfs)
 X = df[["HUMIDITY", "SUNLIGHT"]]
 y = df["ORCHIDS"]
 
-ax = fig.add_subplot(1, 5, 4)
-ax.scatter(X["HUMIDITY"], X["SUNLIGHT"], c = y, cmap="bwr")
-ax.set_xlabel("HUMIDITY")
-ax.set_ylabel("SUNLIGHT")
+# ax.scatter(X["HUMIDITY"], X["SUNLIGHT"], c = y, cmap="bwr")
+ax_all.set_xlabel("HUMIDITY")
+ax_all.set_ylabel("SUNLIGHT")
+ax_all.set_facecolor("black")
 
 ax1 = fig.add_subplot(1, 5, 5, projection='3d')
 ax1.scatter(df["HUMIDITY"], df["SUNLIGHT"], df["ORCHIDS"], marker="*")

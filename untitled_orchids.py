@@ -97,6 +97,8 @@ class Trader:
         orders: list[Order] = []
         conversion: int = 0
 
+        alpha = 2.0 / (50 + 1)
+
         osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
         obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
 
@@ -115,15 +117,30 @@ class Trader:
 
         real_international_ask = international_ask + transport_fee + import_tariff
 
+        domestic_ema = self.traderData["ORCHIDS"]["domestic_ema"]
+        if domestic_ema: 
+            domestic_ema = alpha * domestic_bid + (1-alpha) * domestic_ema
+        else:
+            domestic_ema = domestic_bid
+        self.traderData["ORCHIDS"]["domestic_ema"] = domestic_ema
+
+        real_international_ema = self.traderData["ORCHIDS"]["real_international_ema"]
+        if real_international_ema: 
+            real_international_ema = alpha * real_international_ask + (1-alpha) * real_international_ema
+        else:
+            real_international_ema = real_international_ask
+        self.traderData["ORCHIDS"]["real_international_ema"] = real_international_ema
+
         domestic_bid_hist = self.traderData["ORCHIDS"]["domestic_bid"]
-        domestic_bid_hist.append(domestic_bid)
+        domestic_bid_hist.append(domestic_bid - domestic_ema)
         domestic_bid_hist = domestic_bid_hist[-DOMESTIC_LOOKBACK:]
         self.traderData["ORCHIDS"]["domestic_bid"] = domestic_bid_hist
 
         real_international_ask_hist = self.traderData["ORCHIDS"]["real_international_ask"]
-        real_international_ask_hist.append(real_international_ask)
+        real_international_ask_hist.append(real_international_ask - real_international_ema)
         real_international_ask_hist = real_international_ask_hist[-INTERNATIONAL_LOOKBACK:]
         self.traderData["ORCHIDS"]["real_international_ask"] = real_international_ask_hist
+
 
         cpos = position
 
@@ -152,7 +169,7 @@ class Trader:
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"ORCHIDS": {"domestic_bid": [], "real_international_ask": []}} 
+            self.traderData = {"ORCHIDS": {"domestic_bid": [], "real_international_ask": [], "domestic_ema": None, "real_international_ema": None}} 
         else:
             self.traderData = json.loads(state.traderData) 
 

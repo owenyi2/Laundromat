@@ -21,7 +21,7 @@ for i in range(-1, 2):
     dfs.append(df)
 
     ax = fig.add_subplot(2, 3, i+2)
-    ax1 = fig.addsubplot(2, 3, i+2)
+    ax1 = fig.add_subplot(2, 3, i+2)
     twin1 = ax.twinx()
     twin2 = ax.twinx()
 
