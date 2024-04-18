@@ -21,10 +21,13 @@ premia_mean, premia_std = premia.mean(), premia.std()
 
 print(premia_mean, premia_std)
 
-fig, ax = plt.subplots(1, 1)
+fig, ax = plt.subplots(2, 1)
 
-ax.plot(giftbasket_midprice - synthetic_price)
-ax.plot((giftbasket_midprice - synthetic_price).ewm(span=20).mean())
+ax[0].plot(giftbasket_midprice - synthetic_price)
+ax[0].plot((giftbasket_midprice - synthetic_price).ewm(span=20).mean())
+
+ax[1].plot(giftbasket_midprice)
+ax[1].plot(synthetic_price + 400)
 plt.show()
 
 premia = np.array([])
