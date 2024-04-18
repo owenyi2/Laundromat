@@ -280,6 +280,63 @@ class Trader:
         self.traderData["ORCHIDS"]["previous_humidity"] = humidity
 
         return orders, conversion
+    
+    def wma(self, data_cache):
+        data = np.array(data_cache)
+        weights = np.arange(len(data)) + 1
+    
+        return np.dot(data, weights) / weights.sum()
+
+    def basket_dma(self, value):        
+        emaLength = 80
+        emaGainLimit = 50
+        hullPeriod = 28
+        
+        halfHullPeriod = int(round(hullPeriod * 0.5))
+        rootHullPeriod = int(round(hullPeriod ** 0.5))
+        alpha = 2.0 / (emaLength + 1)
+
+        cache = self.traderData["GIFT_BASKET"]["cache"]
+        cache.append(value)
+        cache = cache[-halfHullPeriod:]
+
+        wma1 = self.wma(cache[-halfHullPeriod:])
+        wma2 = self.wma(cache[-hullPeriod:])
+        raw_hma = (2*wma1) - wma2
+
+        raw_hma_cache = self.traderData["GIFT_BASKET"]["raw_hma_cache"]
+        raw_hma_cache.append(raw_hma)
+        raw_hma_cache = raw_hma_cache[-rootHullPeriod:]
+        hma = self.wma(raw_hma_cache)
+
+        ema_previous = self.traderData["GIFT_BASKET"]["ema_previous"]
+        ec_previous = self.traderData["GIFT_BASKET"]["ec_previous"]
+
+        if ema_previous is None:
+            ema_previous = value
+        if ec_previous is None:
+            ec_previous = value
+
+        ema = alpha * value + (1-alpha) * ema_previous
+        leastError = float("inf")
+
+        for value1 in range(-emaGainLimit, emaGainLimit + 1):
+            gain = value1 / 10
+            ec = alpha * (ema + gain*(value-ec_previous)) + (1-alpha) * ec_previous
+            error = value - ec
+            if abs(error) < leastError:
+                leastError = abs(error)
+                bestGain = gain
+
+        ec = alpha * (ema + bestGain * (value - ec_previous)) + (1-alpha) * ec_previous
+        dma = (ec + hma) * 0.5
+        
+        self.traderData["GIFT_BASKET"]["cache"] = cache
+        self.traderData["GIFT_BASKET"]["raw_hma_cache"] = raw_hma_cache
+        self.traderData["GIFT_BASKET"]["ema_previous"] = ema
+        self.traderData["GIFT_BASKET"]["ec_previous"] = ec
+
+        return dma
 
     def handle_baskets(self, state: TradingState):
         positions = {}
@@ -304,17 +361,8 @@ class Trader:
         synthetic_price = midprice["GIFT_BASKET"] - 4 * midprice["CHOCOLATE"] - 6 * midprice["STRAWBERRIES"] - midprice["ROSES"]
         z_score = (synthetic_price - 385) /  71.1290 
        
-        smooth_span = 20.0
-        alpha = 2.0 /(smooth_span+1)
-
-        previous_ema = self.traderData["GIFT_BASKET"]["z_score_ema"] 
-        if previous_ema is None:
-            z_score_smooth = z_score
-        else:
-            self.traderData["GIFT_BASKET"]
-            z_score_smooth = alpha * z_score + (1-alpha) * previous_ema
-        
-        self.traderData["GIFT_BASKET"]["z_score_ema"] = z_score_smooth
+       
+        z_score_smooth = self.basket_dma(z_score)
 
         forecast = -np.clip(z_score_smooth, -1, 1)
 
@@ -324,6 +372,7 @@ class Trader:
         logger.print("desired_position", desired_position)
         logger.print("current_position", current_position)
         logger.print("z_score", z_score)
+        logger.print("z_score_smooth", z_score_smooth)
         logger.print("synthetic_price", synthetic_price)
 
         if desired_position > current_position and abs(current_position / desired_position - 1) > 0.1:
@@ -371,7 +420,7 @@ class Trader:
 
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}, "ORCHIDS": {"previous_humidity": None}, "GIFT_BASKET": {"z_score_ema": None}}
+            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}, "ORCHIDS": {"previous_humidity": None}, "GIFT_BASKET": {"ema_previous": None, "ec_previous": None, "cache": [], "raw_hma_cache": []}}
         else:
             self.traderData = json.loads(state.traderData) 
 
