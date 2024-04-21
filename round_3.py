@@ -347,7 +347,7 @@ class Trader:
             # return tuple(orders)
             return orders[0], [], [], []
 
-        elif desired_position < current_position * 1.1 and abs(current_position / desired_position - 1) > 0.1:
+        elif desired_position < current_position and abs(current_position / desired_position - 1) > 0.1:
             # sell basket buy constituents
             order_vol = 1e9
             product_price = {}
