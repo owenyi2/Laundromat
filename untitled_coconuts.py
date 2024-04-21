@@ -92,7 +92,8 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def handle_baskets(self, state: TradingState):
+
+    def handle_coconut(self, state: TradingState):
         positions = {}
         osell = {}
         obuy = {}
@@ -100,13 +101,13 @@ class Trader:
 
         composition = {"COCONUT": 1, "COCONUT_COUPON": -2}
 
-        POSITION_LIMIT = 300  
-        for product in composition.keys():
+        POSITION_LIMIT = 300 
+        for product in ["COCONUT", "COCONUT_COUPON"]: 
             positions[product] = state.position.get(product, 0)
             order_depth = state.order_depths[product]
             osell[product] = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
             obuy[product] = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
-            
+           
             if len(osell[product]) == 0 or len(obuy[product]) == 0:
                 return [], []
 
@@ -116,20 +117,20 @@ class Trader:
             midprice[product] = (best_ask_pr + best_bid_pr) / 2
         
         synthetic_price = midprice["COCONUT"] - 2 * midprice["COCONUT_COUPON"] 
-        z_score = (synthetic_price - 8730) / 26.77 
-        smooth_span = 100.0
+        z_score = (synthetic_price - 8729.8) / 26.8 
+       
+        smooth_span = 20.0
         alpha = 2.0 /(smooth_span+1)
 
         previous_ema = self.traderData["COCONUT"]["z_score_ema"] 
         if previous_ema is None:
             z_score_smooth = z_score
         else:
-            self.traderData["COCONUT"]
             z_score_smooth = alpha * z_score + (1-alpha) * previous_ema
         
         self.traderData["COCONUT"]["z_score_ema"] = z_score_smooth
 
-        forecast = -np.clip(z_score_smooth, -1, 1)
+        forecast = -np.clip(z_score_smooth , -1, 1)
 
         desired_position = forecast * POSITION_LIMIT
         current_position = positions["COCONUT"]
@@ -139,50 +140,46 @@ class Trader:
         logger.print("z_score", z_score)
         logger.print("synthetic_price", synthetic_price)
 
-        threshold = 0.05
-
-        if desired_position > current_position and abs(current_position / desired_position - 1) > threshold:
-            # buy COCONUT sell COCONUT_COUPONS 
-            logger.print("BUY")
+        if desired_position > current_position and abs(current_position / desired_position - 1) > 0.1:
+            # buy basket sell constituents
             order_vol = 1e9
             product_price = {}
 
             product_price["COCONUT"], vol = next(iter(osell["COCONUT"].items()))
-            order_vol = min(order_vol, int(vol / -composition["COCONUT"]))
+            order_vol = min(-vol, order_vol)
 
-            product_price["COCONUT_COUPON"], vol = next(iter(obuy["COCONUT_COUPON"].items()))
-            order_vol = min(order_vol, int(vol / -composition["COCONUT_COUPON"]))
+            for product in ["COCONUT_COUPON"]:
+                product_price[product], vol = next(iter(obuy[product].items()))
+                order_vol = min(order_vol, int(vol / -composition[product]))
 
             order_vol = min(order_vol, int(desired_position - current_position))
            
             orders = []
-            for product in composition.keys(): 
-                orders.append([Order(product, product_price[product], order_vol * composition[product])]) 
+            for product in ["COCONUT", "COCONUT_COUPON"]:
+                orders.append([Order(product, product_price[product], order_vol * composition[product])])
+            
             # return tuple(orders)
-            # return orders[0], orders[1] 
-            return [], orders[1]
+            return orders[0], orders[1]
 
-        elif desired_position < current_position and abs(current_position / desired_position - 1) > threshold:
-            # sell coconut buy coupon
-
-            logger.print("SELL")
+        elif desired_position < current_position and abs(current_position / desired_position - 1) > 0.1:
+            # sell basket buy constituents
             order_vol = 1e9
             product_price = {}
 
             product_price["COCONUT"], vol = next(iter(obuy["COCONUT"].items()))
-            order_vol = min(order_vol, int(vol / -composition["COCONUT"]))
+            order_vol = min(vol, order_vol)
 
-            product_price["COCONUT_COUPON"], vol = next(iter(osell["COCONUT_COUPON"].items()))
-            order_vol = min(order_vol, int(vol / -composition["COCONUT_COUPON"]))
+            for product in ["COCONUT_COUPON"]:
+                product_price[product], vol = next(iter(osell[product].items()))
+                order_vol = min(order_vol, int(-vol / -composition[product]))
 
             order_vol = min(order_vol, int(current_position - desired_position))
            
             orders = []
-            for product in composition.keys(): 
-                orders.append([Order(product, product_price[product], order_vol * composition[product])])
+            for product in ["COCONUT", "COCONUT_COUPON"]:
+                orders.append([Order(product, product_price[product], -order_vol * composition[product])])
             # return tuple(orders)
-            # return orders[0], orders[1] 
-            return [], orders[1]
+            return orders[0], orders[1],
         else:
             return [], []
 
@@ -197,7 +194,7 @@ class Trader:
         conversions = 0
 
         self.parse_trader_data(state)
-        orders["COCONUT"], orders["COCONUT_COUPON"] = self.handle_baskets(state) 
+        orders["COCONUT"], orders["COCONUT_COUPON"] = self.handle_coconut(state) 
 
         traderData = json.dumps(self.traderData)
         logger.flush(state, orders, conversions, traderData)
