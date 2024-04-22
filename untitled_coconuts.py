@@ -92,7 +92,6 @@ class Logger:
 logger = Logger()
 
 class Trader:
-
     def handle_coconut(self, state: TradingState):
         positions = {}
         osell = {}
