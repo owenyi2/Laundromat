@@ -1,13 +1,13 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-day = 0
+day = 2
 
 round_3_trades_file = f"round-5-island-data-bottle/trades_round_3_day_{day}_wn.csv"
 round_3_prices_file = f"round-3-island-data-bottle/prices_round_3_day_{day}.csv"
 
 snakes = ["Remy", "Rhianna", "Ruby", "Vinnie", "Vladimir"]
-products = ["ROSES", "CHOCOLATE", "STRAWBERRIES"]
+products = ["ROSES", "CHOCOLATE", "STRAWBERRIES", "GIFT_BASKET"]
 
 t_df = pd.read_csv(round_3_trades_file, sep=";")
 p_df = pd.read_csv(round_3_prices_file, sep=";")
@@ -40,11 +40,13 @@ def calculate_profit(product, trader, trades, final_prices):
 
     final_price = final_prices[final_prices["product"] == product]["mid_price"].values[0]
 
+    print(position)
     return cash + position * final_price
 
 fig = plt.figure()
 
 snakes = [snake for snake in snakes if (snake  not in ["Rhianna", "Ruby"])]
+products = [product for product in products if (product not in ["ROSES", "GIFT_BASKET"])]
 
 for i, snake in enumerate(snakes):
     for j, product in enumerate(products):

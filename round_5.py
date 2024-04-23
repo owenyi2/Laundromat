@@ -459,9 +459,47 @@ class Trader:
         else:
             return [], []
 
+    def handle_roses(self, state: TradingState):
+        market_trades = state.market_trades
+
+        orders = []
+        trades = market_trades.get("ROSES", None)
+        if trades is None:
+            return []
+
+        POSITION_LIMIT = 60
+        position = state.position.get("ROSES", 0)
+        
+        order_depth = state.order_depths["ROSES"]
+        osell = collections.OrderedDict(sorted(order_depth.sell_orders.items()))
+        obuy = collections.OrderedDict(sorted(order_depth.buy_orders.items(), reverse=True))
+        
+        sell = any(filter(lambda x: x.seller == "Rhianna", trades))
+        buy = any(filter(lambda x: x.buyer == "Rhianna", trades))
+    
+        if abs(position) == POSITION_LIMIT:
+            self.traderData["ROSES"]["state"] == None
+
+        if sell:
+            self.traderData["ROSES"]["state"] = "SELL"
+        if buy:
+            self.traderData["ROSES"]["state"] = "BUY"
+
+        if self.traderData["ROSES"]["state"] == "BUY":
+            ask, vol = next(iter(osell.items()))
+            order_for = min(-vol, POSITION_LIMIT - position)
+            orders.append(Order("ROSES", ask, order_for))
+
+        if self.traderData["ROSES"]["state"] == "SELL":
+            bid, vol = next(iter(obuy.items()))
+            order_for = max(-vol, -POSITION_LIMIT - position)
+            orders.append(Order("ROSES", bid, order_for))
+        
+        return orders
+
     def parse_trader_data(self, state: TradingState):
         if state.traderData == '':
-            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}, "ORCHIDS": {"previous_humidity": None}, "GIFT_BASKET": {"z_score_ema": None}, "COCONUT": {"z_score_ema": None}}
+            self.traderData = {"STARFRUIT": {"previous_ask": None, "adjusted_ask": None, "adjusted_bid": None, "previous_bid": None}, "ORCHIDS": {"previous_humidity": None}, "GIFT_BASKET": {"z_score_ema": None}, "COCONUT": {"z_score_ema": None}, "ROSES": {"state": None}}
         else:
             self.traderData = json.loads(state.traderData) 
 
@@ -472,9 +510,10 @@ class Trader:
         self.parse_trader_data(state)
         orders["AMETHYSTS"] = self.compute_amethysts_order(state)
         orders["STARFRUIT"] = self.compute_starfruit_order(state) 
-        orders["ORCHIDS"], conversions = self.handle_orchids(state) 
+        # orders["ORCHIDS"], conversions = self.handle_orchids(state) 
         orders["GIFT_BASKET"], orders["CHOCOLATE"], orders["STRAWBERRIES"], orders["ROSES"] = self.handle_baskets(state) 
         orders["COCONUT"], orders["COCONUT_COUPON"] = self.handle_coconut(state) 
+        orders["ROSES"] = self.handle_roses(state)
 
         traderData = json.dumps(self.traderData)
         logger.flush(state, orders, conversions, traderData)
